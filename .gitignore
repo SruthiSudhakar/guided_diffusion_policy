@@ -6,6 +6,7 @@ data
 data_local
 .vscode
 _wandb
+architecutre
 
 **/.DS_Store
 
@@ -13,6 +14,8 @@ fuse.cfg
 
 *.ai
 *.hdf5*
+*.png
+*.pdf
 
 # Generation results
 results/
