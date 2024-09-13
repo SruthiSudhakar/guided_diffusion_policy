@@ -86,21 +86,19 @@ class MultiStepWrapper(gym.Wrapper):
         self.obs = deque(maxlen=n_obs_steps+1)
         self.reward = list()
         self.done = list()
-        self.grasps = list()
         self.info = defaultdict(lambda : deque(maxlen=n_obs_steps+1))
     
     def reset(self):
         """Resets the environment using kwargs."""
-        obs = super().reset()
+        obs, added_state = super().reset()
 
         self.obs = deque([obs], maxlen=self.n_obs_steps+1)
         self.reward = list()
         self.done = list()
-        self.grasps = list()
         self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
 
         obs = self._get_obs(self.n_obs_steps)
-        return obs
+        return obs, added_state
 
     def step(self, action):
         """
@@ -119,7 +117,6 @@ class MultiStepWrapper(gym.Wrapper):
                 # truncation
                 done = True
             self.done.append(done)
-            self.grasps.append(self.env.is_grasping())
             self._add_info(info)
 
         observation = self._get_obs(self.n_obs_steps)
@@ -165,6 +162,3 @@ class MultiStepWrapper(gym.Wrapper):
         for k, v in self.info.items():
             result[k] = list(v)
         return result
-        
-    def is_grasping(self):
-        return self.grasps

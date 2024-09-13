@@ -1,5 +1,6 @@
 import torch
 import torchvision
+import pdb
 
 def get_resnet(name, weights=None, **kwargs):
     """
@@ -10,6 +11,7 @@ def get_resnet(name, weights=None, **kwargs):
     if (weights == "r3m") or (weights == "R3M"):
         return get_r3m(name=name, **kwargs)
 
+    pdb.set_trace()
     func = getattr(torchvision.models, name)
     resnet = func(weights=weights, **kwargs)
     resnet.fc = torch.nn.Identity()

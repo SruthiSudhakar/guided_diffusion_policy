@@ -5,7 +5,6 @@ import gym
 from gym import spaces
 from omegaconf import OmegaConf
 from robomimic.envs.env_robosuite import EnvRobosuite
-import pdb
 
 class RobomimicImageWrapper(gym.Env):
     def __init__(self, 
@@ -104,7 +103,9 @@ class RobomimicImageWrapper(gym.Env):
 
         # return obs
         obs = self.get_observation(raw_obs)
-        return obs
+        added_state = self.env.get_state()['states']
+        
+        return obs, added_state
     
     def step(self, action):
         raw_obs, reward, done, info = self.env.step(action)
@@ -118,21 +119,6 @@ class RobomimicImageWrapper(gym.Env):
         img = (img * 255).astype(np.uint8)
         return img
 
-    def is_grasping(self):
-        '''
-        print('RIW1:', self.env.env)
-        print('RIW2:', self.env.env.robots[0])
-        print('RIW1:', self.env.env.robots[0].gripper)
-
-        RIW1: <robosuite.environments.manipulation.lift_other_objects.LiftOtherObjects object at 0x7fbbfce9b970>                                                                                                            
-        RIW2: <robosuite.robots.single_arm.SingleArm object at 0x7fb9342645e0>                                                                                                                                              
-        RIW1: <robosuite.models.grippers.panda_gripper.PandaGripper object at 0x7fb9342bb520>                                                                                                                               
-        '''
-        check_grasp = self.env.env._check_grasp(gripper=self.env.env.robots[0].gripper, object_geoms=self.env.env.cube)
-        return check_grasp
-
-    def get_reset_states(self):
-        return self.env.get_state()['states']
 
 def test():
     import os

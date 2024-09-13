@@ -15,9 +15,10 @@ from robomimic.algo import algo_factory
 from robomimic.algo.algo import PolicyAlgo
 import robomimic.utils.obs_utils as ObsUtils
 import robomimic.models.base_nets as rmbn
+from robomimic.models.obs_core import CropRandomizer
 import diffusion_policy.model.vision.crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
-
+import pdb
 
 class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def __init__(self, 
@@ -36,6 +37,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             cond_predict_scale=True,
             obs_encoder_group_norm=False,
             eval_fixed_crop=False,
+            negate_failure_losses=0,
             # parameters passed to step
             **kwargs):
         super().__init__()
@@ -116,7 +118,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         if eval_fixed_crop:
             replace_submodules(
                 root_module=obs_encoder,
-                predicate=lambda x: isinstance(x, rmbn.CropRandomizer),
+                predicate=lambda x: isinstance(x, CropRandomizer),
                 func=lambda x: dmvc.CropRandomizer(
                     input_shape=x.input_shape,
                     crop_height=x.crop_height,
@@ -157,12 +159,13 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         )
         self.normalizer = LinearNormalizer()
         self.horizon = horizon
-        self.obs_feature_dim = obs_feature_dim
-        self.action_dim = action_dim
+        self.obs_feature_dim = obs_feature_dim #137 -> the encoded 2 images + 9dim eef poses (3robot0_eef_pos, 4robot0_eef_quat, 2gripper_pos)
+        self.action_dim = action_dim #10
         self.n_action_steps = n_action_steps
         self.n_obs_steps = n_obs_steps
         self.obs_as_global_cond = obs_as_global_cond
         self.kwargs = kwargs
+        self.negate_failure_losses = negate_failure_losses
 
         if num_inference_steps is None:
             num_inference_steps = noise_scheduler.config.num_train_timesteps
@@ -221,7 +224,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         # normalize input
         nobs = self.normalizer.normalize(obs_dict)
         value = next(iter(nobs.values()))
-        B, To = value.shape[:2]
+        B, _ = value.shape[:2]
         T = self.horizon
         Da = self.action_dim
         Do = self.obs_feature_dim
@@ -347,5 +350,13 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         loss = F.mse_loss(pred, target, reduction='none')
         loss = loss * loss_mask.type(loss.dtype)
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
+
+        if self.negate_failure_losses != 0:
+            '''NEGATE THE LOSS if ITS A FAILED EXECUTION'''
+            pdb.set_trace()
+            successes = batch['success']
+            successes[successes==0]= -1 * self.negate_failure_losses
+            loss = loss.mean(axis=1) * successes
+
         loss = loss.mean()
         return loss

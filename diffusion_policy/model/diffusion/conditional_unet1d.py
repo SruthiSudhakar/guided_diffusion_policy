@@ -8,6 +8,7 @@ from einops.layers.torch import Rearrange
 from diffusion_policy.model.diffusion.conv1d_components import (
     Downsample1d, Upsample1d, Conv1dBlock)
 from diffusion_policy.model.diffusion.positional_embedding import SinusoidalPosEmb
+import pdb
 
 logger = logging.getLogger(__name__)
 

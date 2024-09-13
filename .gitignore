@@ -12,6 +12,7 @@ _wandb
 fuse.cfg
 
 *.ai
+*.hdf5*
 
 # Generation results
 results/

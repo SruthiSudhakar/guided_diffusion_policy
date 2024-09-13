@@ -1,0 +1,467 @@
+DiffusionUnetHybridImagePolicy(
+  (obs_encoder): ObservationEncoder(
+      Key(
+          name=agentview_image
+          shape=[3, 84, 84]
+          modality=rgb
+          randomizer=CropRandomizer(input_shape=[3, 84, 84], crop_size=[76, 76], num_crops=1)
+          net=VisualCore(
+            input_shape=[3, 76, 76]
+            output_shape=[64]
+            backbone_net=ResNet18Conv(input_channel=3, input_coord_conv=False)
+            pool_net=SpatialSoftmax(num_kp=32, temperature=1.0, noise=0.0)
+          )
+          sharing_from=None
+      )
+      Key(
+          name=robot0_eef_pos
+          shape=[3]
+          modality=low_dim
+          randomizer=None
+          net=None
+          sharing_from=None
+      )
+      Key(
+          name=robot0_eef_quat
+          shape=[4]
+          modality=low_dim
+          randomizer=None
+          net=None
+          sharing_from=None
+      )
+      Key(
+          name=robot0_eye_in_hand_image
+          shape=[3, 84, 84]
+          modality=rgb
+          randomizer=CropRandomizer(input_shape=[3, 84, 84], crop_size=[76, 76], num_crops=1)
+          net=VisualCore(
+            input_shape=[3, 76, 76]
+            output_shape=[64]
+            backbone_net=ResNet18Conv(input_channel=3, input_coord_conv=False)
+            pool_net=SpatialSoftmax(num_kp=32, temperature=1.0, noise=0.0)
+          )
+          sharing_from=None
+      )
+      Key(
+          name=robot0_gripper_qpos
+          shape=[2]
+          modality=low_dim
+          randomizer=None
+          net=None
+          sharing_from=None
+      )
+      output_shape=[137]
+  )
+  (model): ConditionalUnet1D(
+    (mid_modules): ModuleList(
+      (0): ConditionalResidualBlock1D(
+        (blocks): ModuleList(
+          (0): Conv1dBlock(
+            (block): Sequential(
+              (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+              (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+              (2): Mish()
+            )
+          )
+          (1): Conv1dBlock(
+            (block): Sequential(
+              (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+              (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+              (2): Mish()
+            )
+          )
+        )
+        (cond_encoder): Sequential(
+          (0): Mish()
+          (1): Linear(in_features=402, out_features=4096, bias=True)
+          (2): Rearrange('batch t -> batch t 1')
+        )
+        (residual_conv): Identity()
+      )
+      (1): ConditionalResidualBlock1D(
+        (blocks): ModuleList(
+          (0): Conv1dBlock(
+            (block): Sequential(
+              (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+              (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+              (2): Mish()
+            )
+          )
+          (1): Conv1dBlock(
+            (block): Sequential(
+              (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+              (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+              (2): Mish()
+            )
+          )
+        )
+        (cond_encoder): Sequential(
+          (0): Mish()
+          (1): Linear(in_features=402, out_features=4096, bias=True)
+          (2): Rearrange('batch t -> batch t 1')
+        )
+        (residual_conv): Identity()
+      )
+    )
+    (diffusion_step_encoder): Sequential(
+      (0): SinusoidalPosEmb()
+      (1): Linear(in_features=128, out_features=512, bias=True)
+      (2): Mish()
+      (3): Linear(in_features=512, out_features=128, bias=True)
+    )
+    (up_modules): ModuleList(
+      (0): ModuleList(
+        (0): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(4096, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=2048, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Conv1d(4096, 1024, kernel_size=(1,), stride=(1,))
+        )
+        (1): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=2048, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Identity()
+        )
+        (2): Upsample1d(
+          (conv): ConvTranspose1d(1024, 1024, kernel_size=(4,), stride=(2,), padding=(1,))
+        )
+      )
+      (1): ModuleList(
+        (0): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(2048, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=1024, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Conv1d(2048, 512, kernel_size=(1,), stride=(1,))
+        )
+        (1): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=1024, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Identity()
+        )
+        (2): Upsample1d(
+          (conv): ConvTranspose1d(512, 512, kernel_size=(4,), stride=(2,), padding=(1,))
+        )
+      )
+    )
+    (down_modules): ModuleList(
+      (0): ModuleList(
+        (0): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(10, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=1024, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Conv1d(10, 512, kernel_size=(1,), stride=(1,))
+        )
+        (1): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=1024, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Identity()
+        )
+        (2): Downsample1d(
+          (conv): Conv1d(512, 512, kernel_size=(3,), stride=(2,), padding=(1,))
+        )
+      )
+      (1): ModuleList(
+        (0): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(512, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=2048, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Conv1d(512, 1024, kernel_size=(1,), stride=(1,))
+        )
+        (1): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 1024, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 1024, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=2048, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Identity()
+        )
+        (2): Downsample1d(
+          (conv): Conv1d(1024, 1024, kernel_size=(3,), stride=(2,), padding=(1,))
+        )
+      )
+      (2): ModuleList(
+        (0): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(1024, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=4096, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Conv1d(1024, 2048, kernel_size=(1,), stride=(1,))
+        )
+        (1): ConditionalResidualBlock1D(
+          (blocks): ModuleList(
+            (0): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+            (1): Conv1dBlock(
+              (block): Sequential(
+                (0): Conv1d(2048, 2048, kernel_size=(5,), stride=(1,), padding=(2,))
+                (1): GroupNorm(8, 2048, eps=1e-05, affine=True)
+                (2): Mish()
+              )
+            )
+          )
+          (cond_encoder): Sequential(
+            (0): Mish()
+            (1): Linear(in_features=402, out_features=4096, bias=True)
+            (2): Rearrange('batch t -> batch t 1')
+          )
+          (residual_conv): Identity()
+        )
+        (2): Identity()
+      )
+    )
+    (final_conv): Sequential(
+      (0): Conv1dBlock(
+        (block): Sequential(
+          (0): Conv1d(512, 512, kernel_size=(5,), stride=(1,), padding=(2,))
+          (1): GroupNorm(8, 512, eps=1e-05, affine=True)
+          (2): Mish()
+        )
+      )
+      (1): Conv1d(512, 10, kernel_size=(1,), stride=(1,))
+    )
+  )
+  (mask_generator): LowdimMaskGenerator()
+  (normalizer): LinearNormalizer(
+    (params_dict): ParameterDict(
+        (action): Object of type: ParameterDict
+        (robot0_eef_pos): Object of type: ParameterDict
+        (robot0_eef_quat): Object of type: ParameterDict
+        (robot0_gripper_qpos): Object of type: ParameterDict
+        (agentview_image): Object of type: ParameterDict
+        (robot0_eye_in_hand_image): Object of type: ParameterDict
+      (action): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 10 (GPU 0)]
+        )
+      )
+      (robot0_eef_pos): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 3 (GPU 0)]
+        )
+      )
+      (robot0_eef_quat): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 4 (GPU 0)]
+        )
+      )
+      (robot0_gripper_qpos): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 2 (GPU 0)]
+        )
+      )
+      (agentview_image): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+        )
+      )
+      (robot0_eye_in_hand_image): ParameterDict(
+          (offset): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+          (scale): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+          (input_stats): Object of type: ParameterDict
+        (input_stats): ParameterDict(
+            (max): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (mean): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (min): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+            (std): Parameter containing: [torch.cuda.FloatTensor of size 1 (GPU 0)]
+        )
+      )
+    )
+  )
+)

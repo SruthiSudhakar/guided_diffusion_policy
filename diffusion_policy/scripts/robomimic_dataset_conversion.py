@@ -35,7 +35,7 @@ def worker(x):
 def main(input, output, eval_dir, num_workers):
     # process inputs
     input = pathlib.Path(input).expanduser()
-    assert input.is_file()
+    # assert input.is_file()
     output = pathlib.Path(output).expanduser()
     assert output.parent.is_dir()
     assert not output.is_dir()

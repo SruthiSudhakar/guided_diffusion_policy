@@ -29,6 +29,9 @@ from diffusion_policy.common.normalize_util import (
     get_identity_normalizer_from_stat,
     array_to_stats
 )
+import math
+
+import pdb
 register_codecs()
 
 class RobomimicReplayImageDataset(BaseImageDataset):
@@ -44,7 +47,8 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             use_legacy_normalizer=False,
             use_cache=False,
             seed=42,
-            val_ratio=0.0
+            val_ratio=0.0,
+            # collected_demos=False,
         ):
         rotation_transformer = RotationTransformer(
             from_rep='axis_angle', to_rep=rotation_rep)
@@ -119,7 +123,9 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             pad_after=pad_after,
             episode_mask=train_mask,
             key_first_k=key_first_k)
+            # collected_demos=collected_demos)
         
+        # self.collected_demos = collected_demos
         self.replay_buffer = replay_buffer
         self.sampler = sampler
         self.shape_meta = shape_meta
@@ -140,8 +146,9 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             sequence_length=self.horizon,
             pad_before=self.pad_before, 
             pad_after=self.pad_after,
-            episode_mask=~self.train_mask
-            )
+            episode_mask=~self.train_mask)
+            # collected_demos=self.collected_demos
+            # )
         val_set.train_mask = ~self.train_mask
         return val_set
 
@@ -213,10 +220,17 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             obs_dict[key] = data[key][T_slice].astype(np.float32)
             del data[key]
 
-        torch_data = {
-            'obs': dict_apply(obs_dict, torch.from_numpy),
-            'action': torch.from_numpy(data['action'].astype(np.float32))
-        }
+        if 'success' in data:
+            torch_data = {
+                'obs': dict_apply(obs_dict, torch.from_numpy),
+                'action': torch.from_numpy(data['action'].astype(np.float32)),
+                'success': torch.from_numpy(data['success'].astype(np.float32))
+            }
+        else:
+            torch_data = {
+                'obs': dict_apply(obs_dict, torch.from_numpy),
+                'action': torch.from_numpy(data['action'].astype(np.float32))
+            }            
         return torch_data
 
 
@@ -284,10 +298,14 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             dtype=np.int64, compressor=None, overwrite=True)
 
         # save lowdim data
-        for key in tqdm(lowdim_keys + ['action'], desc="Loading lowdim data"):
+        if 'success' in demos[f'demo_0'].keys():
+            add_ons_list = ['action', 'success']
+        for key in tqdm(lowdim_keys + add_ons_list, desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':
                 data_key = 'actions'
+            if key == 'success':
+                data_key = 'success'
             this_data = list()
             for i in range(len(demos)):
                 demo = demos[f'demo_{i}']
@@ -300,6 +318,9 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                     rotation_transformer=rotation_transformer
                 )
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['action']['shape'])
+            elif key == 'success':
+                print('SIZE OF SUCCESS', this_data.shape)
+                assert True==True
             else:
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['obs'][key]['shape'])
             _ = data_group.array(

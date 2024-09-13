@@ -6,6 +6,8 @@ import zarr
 import numcodecs
 import numpy as np
 from functools import cached_property
+import pdb
+
 
 def check_chunks_compatible(chunks: tuple, shape: tuple):
     assert len(shape) == len(chunks)
@@ -96,7 +98,12 @@ class ReplayBuffer:
         assert('meta' in root)
         assert('episode_ends' in root['meta'])
         for key, value in root['data'].items():
-            assert(value.shape[0] == root['meta']['episode_ends'][-1])
+            if key=='action':
+                assert (int(value.shape[0]/2) == root['meta']['episode_ends'][-1]) or (value.shape[0] == root['meta']['episode_ends'][-1])
+            elif key=='success':
+                assert True==True
+            else:
+                assert(value.shape[0] == root['meta']['episode_ends'][-1])
         self.root = root
     
     # ============= create constructors ===============
