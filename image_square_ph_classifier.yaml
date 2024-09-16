@@ -14,6 +14,13 @@ dataloader:
   pin_memory: true
   shuffle: true
 dataset_obs_steps: 2
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  inv_gamma: 1.0
+  max_value: 0.9999
+  min_value: 0.0
+  power: 0.75
+  update_after_step: 0
 exp_name: default
 horizon: 16
 keypoint_visible_rate: 1.0
@@ -21,20 +28,20 @@ logging:
   group: null
   id: null
   mode: online
-  name: 2022.12.29-22.31.34_train_success_failure_classifier
+  name: 2022.12.29-22.31.34_train_classifier
   project: diffusion_policy_debug
   resume: true
   tags:
-  - train_success_failure_classifier
+  - train_classifier
   - square_image
   - default
 multi_run:
-  run_dir: data/outputs/2022.12.29/22.31.34_train_train_success_failure_classifier
-  wandb_name_base: 2022.12.29-22.31.34_train_success_failure_classifier
+  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_classifier
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}_classifier
 n_action_steps: 8
 n_latency_steps: 0
 n_obs_steps: 2
-name: train_success_failure_classifier
+name: train_classifier
 obs_as_global_cond: true
 optimizer:
   _target_: torch.optim.AdamW
@@ -46,7 +53,58 @@ optimizer:
   weight_decay: 1.0e-06
 past_action_visible: false
 policy:
-  _target_: diffusion_policy.model.diffusion.conv1d_components.MLP
+  _target_: diffusion_policy.policy.diffusion_classifier_hybrid_image_policy.DiffusionClassifierHybridImagePolicy
+  cond_predict_scale: true
+  crop_shape:
+  - 76
+  - 76
+  diffusion_step_embed_dim: 128
+  down_dims:
+  - 512
+  eval_fixed_crop: true
+  horizon: 16
+  kernel_size: 5
+  n_action_steps: 8
+  n_groups: 8
+  n_obs_steps: 2
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    beta_start: 0.0001
+    clip_sample: true
+    num_train_timesteps: 100
+    prediction_type: epsilon
+    variance_type: fixed_small
+  num_inference_steps: 100
+  obs_as_global_cond: true
+  obs_encoder_group_norm: true
+  shape_meta:
+    action:
+      shape:
+      - 10
+    obs:
+      agentview_image:
+        shape:
+        - 3
+        - 84
+        - 84
+        type: rgb
+      robot0_eef_pos:
+        shape:
+        - 3
+      robot0_eef_quat:
+        shape:
+        - 4
+      robot0_eye_in_hand_image:
+        shape:
+        - 3
+        - 84
+        - 84
+        type: rgb
+      robot0_gripper_qpos:
+        shape:
+        - 2
 shape_meta:
   action:
     shape:
@@ -77,7 +135,6 @@ task:
   abs_action: true
   dataset:
     _target_: diffusion_policy.dataset.robomimic_replay_image_dataset.RobomimicReplayImageDataset
-    collected_demos: true
     abs_action: true
     dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
     horizon: 16

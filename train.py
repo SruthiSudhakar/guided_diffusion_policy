@@ -29,19 +29,19 @@ python train.py \
 
 accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=1 --main_process_port=8082 
 
-accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=5 --main_process_port=8090 train.py \
+accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=0 --main_process_port=8082 train.py \
     --config-dir=. \
     --config-name=image_square_ph_diffusion_policy_cnn.yaml \
     training.seed=42 \
     dataloader.batch_size=1024 \
     val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_negate_failures_downweighted_0.001' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
-    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_mug_successful' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_successful_only.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_successful_only.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_successful_only.hdf5 \
     task.env_runner.max_steps=100 \
-    +task.env_runner.object=hammer \
-    +policy.negate_failure_losses=True 
+    +task.env_runner.object=mugbeige \
+    +policy.negate_failure_losses=0.001 
 
 /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/trial_hammer/data_successful_only.hdf5 \
 

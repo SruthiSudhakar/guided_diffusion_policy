@@ -21,7 +21,6 @@ import tqdm
 import numpy as np
 import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
-from diffusion_policy.model.diffusion.conv1d_components import MLP
 from diffusion_policy.dataset.base_dataset import BaseImageDataset
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
 from diffusion_policy.common.checkpoint_util import TopKCheckpointManager
@@ -48,13 +47,32 @@ class TrainClassifierWorkspace(BaseWorkspace):
         random.seed(seed)
 
         # configure model
-        self.model: MLP = hydra.utils.instantiate(cfg.policy)
+        self.model: DiffusionClassifierHybridImagePolicy = hydra.utils.instantiate(cfg.policy)
+
+        obs_encorder_lr = cfg.optimizer.lr
+        # if cfg.policy.obs_encoder.rgb_model.weights is not None:
+        #     obs_encorder_lr *= 0.1
+        #     print('==> reduce pretrained obs_encorder\'s lr')
+        obs_encorder_params = list()
+        for param in self.model.obs_encoder.parameters():
+            if param.requires_grad:
+                obs_encorder_params.append(param)
+        print(f'obs_encorder params: {len(obs_encorder_params)}')
+
+        param_groups = [
+            {'params': self.model.model.parameters()},
+            {'params': obs_encorder_params, 'lr': obs_encorder_lr},
+        ]
 
         self.criterion = nn.BCELoss()
 
         # configure training state
-        self.optimizer = hydra.utils.instantiate(
-            cfg.optimizer, params=self.model.parameters())
+        optimizer_cfg = OmegaConf.to_container(cfg.optimizer, resolve=True)
+        optimizer_cfg.pop('_target_')
+        self.optimizer = torch.optim.AdamW(
+            params=param_groups,
+            **optimizer_cfg
+        )
 
         # configure training state
         self.global_step = 0
@@ -96,6 +114,8 @@ class TrainClassifierWorkspace(BaseWorkspace):
         print('train dataset:', len(dataset), 'train dataloader:', len(train_dataloader))
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
 
+        self.model.set_normalizer(normalizer)
+
         # configure lr scheduler
         lr_scheduler = get_scheduler(
             cfg.training.lr_scheduler,
@@ -109,6 +129,20 @@ class TrainClassifierWorkspace(BaseWorkspace):
             last_epoch=self.global_step-1
         )
 
+        pdb.set_trace()
+        # configure logging
+        wandb_run = wandb.init(
+            dir=str(self.output_dir),
+            config=OmegaConf.to_container(cfg, resolve=True),
+            **cfg.logging
+        )
+        wandb.config.update(
+            {
+                "output_dir": self.output_dir,
+            }, 
+            allow_val_change=True
+        )
+
         # configure checkpoint
         topk_manager = TopKCheckpointManager(
             save_dir=os.path.join(self.output_dir, 'checkpoints'),
@@ -119,11 +153,7 @@ class TrainClassifierWorkspace(BaseWorkspace):
         train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
             train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler
         )
-
-        # device transfer
-        device = torch.device(cfg.training.device)
-        self.model.to(device)
-        optimizer_to(self.optimizer, device)
+        device = self.model.device
 
         # save batch for sampling
         train_sampling_batch = None
@@ -156,10 +186,7 @@ class TrainClassifierWorkspace(BaseWorkspace):
                         # always use the latest batch
                         train_sampling_batch = batch
                         # compute loss
-                        mlp_output = self.model(batch['action'].permute((0,2,1)))
-
-                        raw_loss = self.criterion(mlp_output, batch['success'][...,np.newaxis])
-
+                        raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch)
                         loss = raw_loss / cfg.training.gradient_accumulate_every
                         loss.backward()
 
@@ -212,13 +239,11 @@ class TrainClassifierWorkspace(BaseWorkspace):
                             # device transfer
                             batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                             # compute loss
-                            mlp_output = self.model(batch['action'].permute((0,2,1)))
-                            valid_loss.append(self.criterion(mlp_output, batch['success'][...,np.newaxis]).item())
-                            actual_out = (mlp_output > 0.5).float() * 1                            
-                            equals = batch['success'].float()  ==  actual_out.t()
-                            pdb.set_trace()
+                            loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
+                            valid_loss.append(loss.item())
+                            actual_out = (pred[:,0] > 0.5).float() * 1                            
+                            equals = (batch['success'].float()  ==  actual_out.t()) + 0.0
                             valid_accuracy.append(torch.mean(equals).cpu().numpy())
-                    pdb.set_trace()
                     step_log['valid_loss'] = np.mean(valid_loss)
                     step_log['valid_accuracy'] = np.mean(valid_accuracy)
                     

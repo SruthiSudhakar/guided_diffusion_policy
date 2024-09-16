@@ -10,13 +10,14 @@ accelerate launch --multi_gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2
 
 python train.py \
     --config-dir=. \
-    --config-name=train_classifier_config.yaml \
+    --config-name=image_square_ph_classifier.yaml \
     training.seed=42 \
     training.device=2 \
-    dataloader.batch_size=4001 \
-    val_dataloader.batch_size=91 \
+    dataloader.batch_size=1024 \
+    val_dataloader.batch_size=1024 \
     hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_15.00.33_classifier' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data.hdf5 \
-    +task.env_runner.object=redcube
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data_all.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data_all.hdf5 \
+    training.checkpoint_every=10
+    +task.env_runner.object=hammer
 """
