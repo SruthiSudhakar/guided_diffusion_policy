@@ -246,7 +246,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
         self.output_dir = output_dir
         self.save_stuff = save_stuff
 
-    def run(self, policy: BaseImagePolicy):
+    def run(self, policy: BaseImagePolicy, classifier=None, guidance_scale=None, guided_towards=None):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -309,7 +309,10 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                     new_obs_dict = {}
                     for k,v in obs_dict.items():
                         new_obs_dict[k]=v[:,-2:]
-                    action_dict = policy.predict_action(new_obs_dict)
+                    if classifier:
+                        action_dict = policy.predict_action(new_obs_dict, classifier, guidance_scale, guided_towards)
+                    else:
+                        action_dict = policy.predict_action(new_obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,

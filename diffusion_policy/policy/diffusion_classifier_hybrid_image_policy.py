@@ -243,3 +243,11 @@ class DiffusionClassifierHybridImagePolicy(BaseImagePolicy):
             return loss, output_probabilities
 
         return loss
+
+    def compute_classifier_gradient(self, noisy_trajectory, global_cond=None, timesteps=None, label=None):
+        torch.set_grad_enabled(True)
+        pred = self.model(noisy_trajectory, timesteps, local_cond=None, global_cond=global_cond)
+        loss = self.criterion(pred, label)
+        classifier_guidanace = torch.autograd.grad(outputs=loss, inputs=noisy_trajectory)[0]
+        #  list(self.model.parameters())[0].grad
+        return classifier_guidanace

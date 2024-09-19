@@ -4,15 +4,26 @@ export MUJOCO_GL=osmesa
 conda activate robodiff
 
 Usage:
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.11/14.50.02_train_diffusion_unet_hybrid_needle_negate_0.001/checkpoints/epoch=0300-test_mean_score=0.760.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.11/14.50.02_train_diffusion_unet_hybrid_needle_negate_0.001/checkpoints/epoch=0300-test_mean_score=0.760/ \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
                 --device cuda:3 \
-                --object needle \
+                --object hammer \
                 --n_train 50 \
-                --n_test 950 \
+                --n_test 50 \
                 --save
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.16/17.26.03_train_classifier_15.00.33_classifier/checkpoints/epoch=0010-valid_accuracy=0.919 \
+                --guidance_scale 1000 \
+                --guided_towards 1 \
+                --max_steps 100 \
+                --device cuda:3 \
+                --object hammer \
+                --n_train 50 \
+                --n_test 50 
 """
 
 import sys
@@ -37,6 +48,9 @@ import datetime
 @click.option('-c', '--checkpoint', required=True)
 @click.option('-dataset_path', '--dataset_path', required=False)
 @click.option('-o', '--output_dir', required=True)
+@click.option('-classifier_dir', '--classifier_dir', required=False)
+@click.option('-guidance_scale', '--guidance_scale', required=False)
+@click.option('-guided_towards', '--guided_towards', required=False)
 @click.option('-d', '--device', default='cuda:0')
 @click.option('-max_steps', '--max_steps', default=500)
 @click.option('-n_train', '--n_train', required=True)
@@ -44,13 +58,21 @@ import datetime
 @click.option('-object', '--object', default='block')
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
-def main(checkpoint, dataset_path, output_dir, device, max_steps, object, add, n_train, n_test, save):
+def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save):
     current_time = datetime.datetime.now()
-    output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
+    if classifier_dir:
+        output_dir+=f'guided_{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
+    else:
+        output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
     if os.path.exists(output_dir):
         click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
     
+    with open (output_dir+'/save_some_deets.txt', 'w') as f: 
+        deets = [checkpoint, output_dir, dataset_path, classifier_dir, guidance_scale, guided_towards, max_steps, object, n_train, n_test]
+        deets = [str(x) for x in deets]
+        f.writelines("\n".join(deets))
+
     # load checkpoint
     payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
@@ -85,12 +107,32 @@ def main(checkpoint, dataset_path, output_dir, device, max_steps, object, add, n
     policy.to(device)
     policy.eval()
     
-    # run eval
-    env_runner = hydra.utils.instantiate(
-        cfg.task.env_runner,
-        output_dir=output_dir)
-    runner_log= env_runner.run(policy)
-    
+    if classifier_dir:
+        classifier_payload = torch.load(open(classifier_dir+'.ckpt', 'rb'), pickle_module=dill)
+        classifier_cfg = classifier_payload['cfg']
+        classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
+
+        classifier_workspace = classifier_cls(classifier_cfg, output_dir=classifier_dir)
+        classifier_workspace: BaseWorkspace
+        classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
+        
+        # get policy from workspace
+        classifier_policy = classifier_workspace.model    
+        classifier_policy.to(device)
+        classifier_policy.eval()
+        
+        # run eval
+        env_runner = hydra.utils.instantiate(
+            cfg.task.env_runner,
+            output_dir=output_dir)
+        runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
+    else:
+        # run eval
+        env_runner = hydra.utils.instantiate(
+            cfg.task.env_runner,
+            output_dir=output_dir)
+        runner_log= env_runner.run(policy)
+
     # dump log to json
     json_log = dict()
     for key, value in runner_log.items():

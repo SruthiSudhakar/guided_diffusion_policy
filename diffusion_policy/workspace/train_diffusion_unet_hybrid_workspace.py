@@ -50,6 +50,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
 
         # configure model
         self.model: DiffusionUnetHybridImagePolicy = hydra.utils.instantiate(cfg.policy)
+        # self.classifier_model: DiffusionClassifierHybridImagePolicy = hydra.utils.instantiate(cfg.classifier_policy)
 
         self.ema_model: DiffusionUnetHybridImagePolicy = None
         if cfg.training.use_ema:
@@ -134,6 +135,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
 
         self.model.set_normalizer(normalizer)
+        # self.classifier_model.set_normalizer(normalizer)
         if cfg.training.use_ema:
             self.ema_model.set_normalizer(normalizer)
 
@@ -190,10 +192,15 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         # optimizer_to(self.optimizer, device)
 
         # accelerator
+        # train_dataloader, val_dataloader, self.model, self.classifier_model, self.optimizer, lr_scheduler = accelerator.prepare(
+        #     train_dataloader, val_dataloader, self.model, self.classifier_model, self.optimizer, lr_scheduler
+        # )
         train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
             train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler
         )
         device = self.model.device
+        # self.classifier_model.eval()
+        # print(self.classifier_model.device)
         if self.ema_model is not None:
             self.ema_model.to(device)
 
@@ -229,6 +236,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
 
                         # compute loss
                         # raw_loss = self.model(batch)
+                        # raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_model_gradients)
                         raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch)
                         # from torchviz import make_dot
                         # import pylab

@@ -178,7 +178,8 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def conditional_sample(self, 
             condition_data, condition_mask,
             local_cond=None, global_cond=None,
-            generator=None,
+            generator=None, classifier_policy=None,
+            guidance_scale=None, guided_towards=None,
             # keyword arguments to scheduler.step
             **kwargs
             ):
@@ -189,7 +190,8 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             size=condition_data.shape, 
             dtype=condition_data.dtype,
             device=condition_data.device,
-            generator=generator)
+            generator=generator, requires_grad=True
+        )
     
         # set step values
         scheduler.set_timesteps(self.num_inference_steps)
@@ -202,12 +204,21 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             model_output = model(trajectory, t, 
                 local_cond=local_cond, global_cond=global_cond)
 
+            if classifier_policy:
+                # 2.5 compute classifier graident
+                timesteps = torch.zeros(trajectory.shape[0], device=trajectory.device).long()+t
+                labels=torch.zeros(trajectory.shape[0]).unsqueeze(dim=-1).to(trajectory.device)+guided_towards
+                guidance_gradient = classifier_policy.compute_classifier_gradient( trajectory,  global_cond=global_cond, timesteps=timesteps, label=labels)
+
+                model_output += guidance_scale * guidance_gradient
+
             # 3. compute previous image: x_t -> x_t-1
             trajectory = scheduler.step(
                 model_output, t, trajectory, 
                 generator=generator,
                 **kwargs
                 ).prev_sample
+
         
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask]        
@@ -215,7 +226,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         return trajectory
 
 
-    def predict_action(self, obs_dict: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+    def predict_action(self, obs_dict: Dict[str, torch.Tensor], classifier_policy=None, guidance_scale=None, guided_towards=None) -> Dict[str, torch.Tensor]:
         """
         obs_dict: must include "obs" key
         result: must include "action" key
@@ -262,7 +273,10 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             cond_data, 
             cond_mask,
             local_cond=local_cond,
-            global_cond=global_cond,
+            global_cond=global_cond, 
+            classifier_policy=classifier_policy,
+            guidance_scale=guidance_scale,
+            guided_towards=guided_towards,
             **self.kwargs)
         
         # unnormalize prediction

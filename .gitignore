@@ -16,6 +16,7 @@ fuse.cfg
 *.hdf5*
 *.png
 *.pdf
+*.txt
 
 # Generation results
 results/
