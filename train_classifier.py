@@ -15,7 +15,7 @@ python train.py \
     training.device=2 \
     dataloader.batch_size=1024 \
     val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_15.00.33_classifier' \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier' \
     task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data_all.hdf5 \
     task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data_all.hdf5 \
     training.checkpoint_every=10

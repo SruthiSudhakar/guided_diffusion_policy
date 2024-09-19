@@ -7,12 +7,8 @@ Usage:
 python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.11/14.50.02_train_diffusion_unet_hybrid_needle_negate_0.001/checkpoints/epoch=0300-test_mean_score=0.760.ckpt \
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.11/14.50.02_train_diffusion_unet_hybrid_needle_negate_0.001/checkpoints/epoch=0300-test_mean_score=0.760/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
-                --max_steps 100 \
-                --device cuda:3 \
-                --object needle \
-                --n_train 50 \
-                --n_test 950 \
-                --save
+                --device cuda:3
+
 """
 
 import sys
@@ -54,22 +50,9 @@ def main(checkpoint, dataset_path, output_dir, device, max_steps, object, add, n
     # load checkpoint
     payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-       
-    cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
-    with open_dict(cfg):
-        cfg['task']['env_runner']['object'] = object
-        cfg['task']['env_runner']['save_stuff'] = save
 
     cfg['task']['dataset_path'] = dataset_path
-    cfg['task']['env_runner']['dataset_path'] = dataset_path
     cfg['task']['dataset']['dataset_path'] = dataset_path
-    cfg['task']['env_runner']['max_steps'] = max_steps
-    cfg['task']['env_runner']['n_train'] = int(n_train)
-    cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-    cfg['task']['env_runner']['n_test'] = int(n_test)
-    cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-    cfg['task']['env_runner']['n_envs'] = 28
-
 
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, output_dir=output_dir)
