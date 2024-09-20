@@ -30,6 +30,7 @@ from diffusion_policy.model.common.lr_scheduler import get_scheduler
 from accelerate import Accelerator
 import pdb
 from torch import nn
+import omegaconf 
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -129,7 +130,6 @@ class TrainClassifierWorkspace(BaseWorkspace):
             last_epoch=self.global_step-1
         )
 
-        pdb.set_trace()
         # configure logging
         wandb_run = wandb.init(
             dir=str(self.output_dir),
@@ -280,6 +280,51 @@ class TrainClassifierWorkspace(BaseWorkspace):
                 self.epoch += 1
 
         accelerator.end_training()
+    def run_validation(self):
+        cfg = copy.deepcopy(self.cfg)
+        # configure dataset
+        dataset: BaseImageDataset
+        dataset = hydra.utils.instantiate(cfg.task.dataset)
+        assert isinstance(dataset, BaseImageDataset)
+        train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        normalizer = dataset.get_normalizer()
+
+        # configure validation dataset
+        val_dataset = dataset.get_validation_dataset()
+        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
+
+        self.model.set_normalizer(normalizer)
+
+        device = self.model.device
+        self.model.eval()  
+        valid_loss = list()
+        valid_accuracy = list()
+
+        step_log = dict()
+        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
+            leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
+            for batch_idx, batch in enumerate(tepoch):
+                # device transfer
+                batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                # compute loss
+                loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
+                valid_loss.append(loss.item())
+                actual_out = (pred[:,0] > 0.5).float() * 1                            
+                equals = (batch['success'].float()  ==  actual_out.t()) + 0.0
+                valid_accuracy.append(torch.mean(equals).cpu().numpy())
+        step_log['valid_loss'] = np.mean(valid_loss)
+        step_log['valid_accuracy'] = np.mean(valid_accuracy)
+            
+        print('\tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  '.format(
+            step_log['valid_loss'], step_log['valid_accuracy']))
+
+        # sanitize metric names
+        metric_dict = dict()
+        for key, value in step_log.items():
+            new_key = key.replace('/', '_')
+            metric_dict[new_key] = value
+        return metric_dict
 
 @hydra.main(
     version_base=None,

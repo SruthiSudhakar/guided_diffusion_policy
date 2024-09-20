@@ -183,6 +183,8 @@ class DiffusionClassifierHybridImagePolicy(BaseImagePolicy):
 
         # normalize input
         assert 'valid_mask' not in batch
+        if self.normalizer.device != batch['action'].device:
+            self.normalizer.to(batch['action'].device)
         nobs = self.normalizer.normalize(batch['obs'])
         nactions = self.normalizer['action'].normalize(batch['action'])
         batch_size = nactions.shape[0]

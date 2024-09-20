@@ -8,13 +8,22 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.16/17.26.03_train_classifier_15.00.33_classifier/checkpoints/epoch=0010-valid_accuracy=0.919 \
+                --guidance_scale 950 \
+                --guided_towards 1 \
                 --max_steps 100 \
-                --device cuda:3 \
-                --object hammer \
+                --device cuda:1 \
+                --object needle \
+                --n_train 50 \
+                --n_test 950 
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
+                --max_steps 100 \
+                --device cuda:0 \
+                --object greencube \
                 --n_train 50 \
                 --n_test 950 \
                 --save
-m
 """
 
 import sys
