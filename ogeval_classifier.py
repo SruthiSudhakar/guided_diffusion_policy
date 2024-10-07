@@ -4,8 +4,8 @@ export MUJOCO_GL=osmesa
 conda activate robodiff
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.16/16.38.04_train_classifier_15.00.33_classifier/checkpoints/epoch=0020-valid_accuracy=0.868 \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2/data_all.hdf5 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.20/00.08.12_train_classifier_classifiertest_combined1/checkpoints/epoch=0030-valid_accuracy=0.862 \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/combined1/combined.hdf5 \
                 --device cuda:3 
 
 """

@@ -1,29 +1,26 @@
 """
+cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 conda activate robodiff
 
 Usage:
+
 python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
+                --max_steps 100 \
+                --device cuda:1 \
+                --object hammer \
+                --n_train 5 \
+                --n_test 5 \
                 --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.16/17.26.03_train_classifier_15.00.33_classifier/checkpoints/epoch=0010-valid_accuracy=0.919 \
                 --guidance_scale 950 \
                 --guided_towards 1 \
-                --max_steps 100 \
-                --device cuda:1 \
-                --object needle \
-                --n_train 50 \
-                --n_test 950 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
-                --max_steps 100 \
-                --device cuda:0 \
-                --object greencube \
-                --n_train 50 \
-                --n_test 950 \
-                --save
+
+                --test_start_seed 5
+
+                --save 
 """
 
 import sys
@@ -55,10 +52,11 @@ import datetime
 @click.option('-max_steps', '--max_steps', default=500)
 @click.option('-n_train', '--n_train', required=True)
 @click.option('-n_test', '--n_test', required=True)
+@click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default='block')
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
-def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save):
+def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save, test_start_seed):
     current_time = datetime.datetime.now()
     if classifier_dir:
         output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}'
@@ -69,7 +67,7 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     with open (output_dir+'/save_some_deets.txt', 'w') as f: 
-        deets = [checkpoint, output_dir, dataset_path, classifier_dir, guidance_scale, guided_towards, max_steps, object, n_train, n_test]
+        deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', dataset_path, 'classifier_dir', classifier_dir, 'guidance_scale', guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, 'object',object, 'n_train', n_train, 'n_test', n_test, 'test_start_seed', test_start_seed]
         deets = [str(x) for x in deets]
         f.writelines("\n".join(deets))
 
@@ -91,6 +89,8 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
     cfg['task']['env_runner']['n_test'] = int(n_test)
     cfg['task']['env_runner']['n_test_vis'] = int(n_test)
     cfg['task']['env_runner']['n_envs'] = 28
+    if test_start_seed:
+        cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
 
 
     cls = hydra.utils.get_class(cfg._target_)
