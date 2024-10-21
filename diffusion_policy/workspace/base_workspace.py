@@ -8,7 +8,7 @@ from omegaconf import OmegaConf
 import dill
 import torch
 import threading
-
+import pdb
 
 class BaseWorkspace:
     include_keys = tuple()
@@ -81,7 +81,15 @@ class BaseWorkspace:
 
         for key, value in payload['state_dicts'].items():
             if key not in exclude_keys:
-                self.__dict__[key].load_state_dict(value, **kwargs)
+                try:
+                    self.__dict__[key].load_state_dict(value, **kwargs)
+                except:
+                    pdb.set_trace()
+                    new_value={}
+                    for k,v in value.items(): 
+                        new_value[k.split('module.')[1]]=v
+                    self.__dict__[key].load_state_dict(new_value, **kwargs)
+
         for key in include_keys:
             if key in payload['pickles']:
                 self.__dict__[key] = dill.loads(payload['pickles'][key])

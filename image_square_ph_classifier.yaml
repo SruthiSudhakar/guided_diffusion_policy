@@ -26,9 +26,9 @@ horizon: 16
 keypoint_visible_rate: 1.0
 logging:
   group: null
-  id: null
+  id: ${now:%Y.%m.%d.%H.%M.%S}_train_classifier
   mode: online
-  name: 2022.12.29-22.31.34_train_classifier
+  name: ${now:%Y.%m.%d.%H.%M.%S}_train_classifier
   project: diffusion_policy_debug
   resume: true
   tags:

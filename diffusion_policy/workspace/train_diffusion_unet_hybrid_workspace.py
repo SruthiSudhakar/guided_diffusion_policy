@@ -31,7 +31,8 @@ from diffusion_policy.model.diffusion.ema_model import EMAModel
 from diffusion_policy.model.common.lr_scheduler import get_scheduler
 from accelerate import Accelerator
 import pdb
-
+import dill
+import time
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -50,7 +51,16 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
 
         # configure model
         self.model: DiffusionUnetHybridImagePolicy = hydra.utils.instantiate(cfg.policy)
-        # self.classifier_model: DiffusionClassifierHybridImagePolicy = hydra.utils.instantiate(cfg.classifier_policy)
+        self.classifier=None
+        if 'classifier_dir' in cfg.training and cfg.training.classifier_dir != '':
+            classifier_payload = torch.load(open(cfg.training.classifier_dir, 'rb'), pickle_module=dill)
+            classifier_cfg = classifier_payload['cfg']
+            classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
+            classifier_workspace = classifier_cls(classifier_cfg, output_dir=cfg.training.classifier_dir)
+            classifier_workspace: BaseWorkspace
+            classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
+            # get policy from workspace
+            self.classifier = classifier_workspace.model    
 
         self.ema_model: DiffusionUnetHybridImagePolicy = None
         if cfg.training.use_ema:
@@ -89,34 +99,47 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         self.epoch = 0
 
         # do not save optimizer if resume=False
-        if not cfg.training.resume:
-            self.exclude_keys = ['optimizer']
+        # if not cfg.training.resume:
+        self.exclude_keys = ['optimizer']
 
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
-        accelerator = Accelerator(log_with='wandb')
-        wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
-        wandb_cfg.pop('project')
-        accelerator.init_trackers(
-            project_name=cfg.logging.project,
-            config=OmegaConf.to_container(cfg, resolve=True),
-            init_kwargs={"wandb": wandb_cfg}
-        )
+        accelerator = Accelerator()#og_with='wandb')
+        # wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
+        # wandb_cfg.pop('project')
+        # accelerator.init_trackers(
+        #     project_name=cfg.logging.project,
+        #     config=OmegaConf.to_container(cfg, resolve=True),
+        #     init_kwargs={"wandb": wandb_cfg}
+        # )
 
         # resume training
         if cfg.training.resume:
-            lastest_ckpt_path = self.get_checkpoint_path()
-            print('LATEST CHECKPOINT PATH', lastest_ckpt_path)
-            if lastest_ckpt_path.is_file():
-                accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
+            # lastest_ckpt_path = self.get_checkpoint_path()
+            latest_ckpt_path = cfg.training.resume
+            # if lastest_ckpt_path.is_file():
+            try:
+                accelerator.print(f"Resuming from checkpoint {latest_ckpt_path}")
+                self.load_checkpoint(path=latest_ckpt_path)
+                self.global_step=0
+                self.epoch=0
+            except:
+                pdb.set_trace()
 
         # configure dataset
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         assert isinstance(dataset, BaseImageDataset)
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        '''
+        train dataset: 51683 train dataloader: 51
+        val dataset: 1264 val dataloader: 2
+        '''
+        if cfg.task.train_subset:
+            train_subset = torch.utils.data.Subset(dataset, random.sample(range(0,len(train_dataloader.dataset)), cfg.task.train_subset))
+            train_dataloader = DataLoader(train_subset, **cfg.dataloader)
+
 
         # compute normalizer on the main process and save to disk
         normalizer_path = os.path.join(self.output_dir, 'normalizer.pkl')
@@ -131,14 +154,20 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         # configure validation dataset
         val_dataset = dataset.get_validation_dataset()
         val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        if cfg.task.val_subset:
+            val_subset = torch.utils.data.Subset(val_dataset, random.sample(range(0,len(val_dataloader.dataset)), cfg.task.val_subset))
+            val_dataloader = torch.utils.data.DataLoader(val_subset, **cfg.val_dataloader)
+
         print('train dataset:', len(dataset), 'train dataloader:', len(train_dataloader))
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
 
         self.model.set_normalizer(normalizer)
-        # self.classifier_model.set_normalizer(normalizer)
+        if self.classifier:
+            self.classifier.set_normalizer(normalizer)
+
         if cfg.training.use_ema:
             self.ema_model.set_normalizer(normalizer)
-
+        
         # configure lr scheduler
         lr_scheduler = get_scheduler(
             cfg.training.lr_scheduler,
@@ -195,8 +224,8 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         # train_dataloader, val_dataloader, self.model, self.classifier_model, self.optimizer, lr_scheduler = accelerator.prepare(
         #     train_dataloader, val_dataloader, self.model, self.classifier_model, self.optimizer, lr_scheduler
         # )
-        train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
-            train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler
+        train_dataloader, val_dataloader, self.model, self.classifier, self.optimizer, lr_scheduler = accelerator.prepare(
+            train_dataloader, val_dataloader, self.model, self.classifier, self.optimizer, lr_scheduler
         )
         device = self.model.device
         # self.classifier_model.eval()
@@ -221,10 +250,14 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         with JsonLogger(log_path) as json_logger:
             for local_epoch_idx in range(cfg.training.num_epochs):
                 self.model.train()
+                if self.classifier:
+                    self.classifier.eval()
 
                 step_log = dict()
                 # ========= train for this epoch ==========
                 train_losses = list()
+                train_mse_losses = list()
+                train_guidance_grad_scaled = list()
                 with tqdm.tqdm(train_dataloader, desc=f"{accelerator.process_index} Training epoch {self.epoch}", 
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                     for batch_idx, batch in enumerate(tepoch):
@@ -237,7 +270,11 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         # compute loss
                         # raw_loss = self.model(batch)
                         # raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_model_gradients)
-                        raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch)
+                        if self.classifier:
+                            raw_loss, mse_loss, guidance_grad_scaled = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_policy=accelerator.unwrap_model(self.classifier), guidance_scale=cfg.training.guidance_scale)
+                        else:
+                            raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale)
+
                         # from torchviz import make_dot
                         # import pylab
                         # gv = make_dot(raw_loss, params=dict(self.model.named_parameters()), show_attrs=True, show_saved=True)
@@ -267,6 +304,13 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                             'epoch': self.epoch,
                             'lr': lr_scheduler.get_last_lr()[0]
                         }
+                        if self.classifier:
+                            mse_loss_cpu = mse_loss.item()
+                            guidance_grad_scaled_cpu = guidance_grad_scaled.item()
+                            train_mse_losses.append(mse_loss_cpu)
+                            train_guidance_grad_scaled.append(guidance_grad_scaled_cpu)
+                            step_log['train_guidance_grad_scaled']= guidance_grad_scaled_cpu
+                            step_log['train_mse_losses']= mse_loss_cpu
 
                         is_last_batch = (batch_idx == (len(train_dataloader)-1))
                         if not is_last_batch:
@@ -283,6 +327,8 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 # replace train_loss with epoch average
                 train_loss = np.mean(train_losses)
                 step_log['train_loss'] = train_loss
+                step_log['train_guidance_grad_scaled'] = np.mean(train_guidance_grad_scaled)
+                step_log['train_mse_losses'] = np.mean(train_mse_losses)
 
                 # ========= eval for this epoch ==========
                 policy = accelerator.unwrap_model(self.model)
@@ -329,8 +375,9 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
                         obs_dict = batch['obs']
                         gt_action = batch['action']
-                        
+
                         result = policy.predict_action(obs_dict)
+                        # result = policy.predict_action(obs_dict, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale, guided_towards=1.0)
                         pred_action = result['action_pred']
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         log_action_mse(step_log, 'val', pred_action, gt_action)
@@ -346,7 +393,9 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                     # unwrap the model to save ckpt
                     model_ddp = self.model
                     self.model = accelerator.unwrap_model(self.model)
-
+                    classifier_ddp = self.classifier
+                    self.classifier = accelerator.unwrap_model(self.classifier)
+                    
                     # checkpointing
                     if cfg.checkpoint.save_last_ckpt:
                         self.save_checkpoint()
@@ -369,6 +418,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 
                     # recover the DDP model
                     self.model = model_ddp
+                    self.classifier = classifier_ddp
                 # ========= eval end for this epoch ==========
                 # end of epoch
                 # log of last step is combined with validation and rollout

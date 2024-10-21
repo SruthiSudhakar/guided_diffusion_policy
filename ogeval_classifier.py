@@ -2,11 +2,12 @@
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 conda activate robodiff
+cd /proj/vondrick3/sruthi/robots/diffusion_policy
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.20/00.08.12_train_classifier_classifiertest_combined1/checkpoints/epoch=0030-valid_accuracy=0.862 \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/combined1/combined.hdf5 \
-                --device cuda:3 
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.16/16.30.32_train_classifier_classifier_mugbeige2/checkpoints/epoch=0005-valid_accuracy=0.896 \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_all.hdf5 \
+                --device cuda:5
 
 """
 
@@ -28,6 +29,8 @@ import pdb
 from omegaconf import OmegaConf,open_dict
 import datetime
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
+import numpy as np
+
 
 @click.command()
 @click.option('-c', '--checkpoint', required=True)
@@ -64,8 +67,29 @@ def main(checkpoint, dataset_path, device):
 
     # dump log to json
     json_log = dict()
+    tp = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==1)[0]].sum()
+    tn = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].sum()
+    fp = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].shape[0] - np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].sum()
+    fn = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==1)[0]].shape[0]- np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==1)[0]].sum()
+    acc_per_class = {}
+
     for key, value in stats.items():
+        if key=='equals' or key=='gt_objects' or key=='gt_successes':
+            continue
         json_log[key] = value
+    json_log['tp'] = tp
+    json_log['tn'] = tn
+    json_log['fp'] = fp
+    json_log['fn'] = fn
+
+    if len(stats['gt_objects']) > 0:
+        for gt_object in stats['gt_objects']:
+            acc_per_class[gt_object] = []
+        for idx in len(range(stats['equals'])):
+            acc_per_class[stats['gt_objects'][idx]].append(stats['equals'])
+        for gt_object in stats['gt_objects']:
+            json_log[f'acc_of_{gt_object}']= acc_per_class[gt_object].mean()
+
     out_path = os.path.join(output_dir, 'eval_log.json')
     json_log=dict_apply(json_log, lambda x: float(x))
     json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)

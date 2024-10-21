@@ -226,6 +226,8 @@ task:
           - 2
     use_cache: true
     val_ratio: 0.02
+  train_subset: null
+  val_subset: null
   dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
   dataset_type: ph
   env_runner:
@@ -303,6 +305,8 @@ task:
   task_name: square
 task_name: square_image
 training:
+  classifier_dir: ''
+  guidance_scale: 950
   checkpoint_every: 50
   debug: false
   device: cuda:0

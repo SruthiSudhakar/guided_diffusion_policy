@@ -182,6 +182,8 @@ class SequenceSampler:
         for key in self.keys:
             if key=='success':
                 result[key] = np.array(self.replay_buffer[key][episode_idx])
+            elif key=='object':
+                result[key] = np.array(self.replay_buffer[key][episode_idx])
             # elif key=='action' and self.collected_demos:
             #     input_arr = self.replay_buffer[key]
             #     length_of_datapt = buffer_end_idx-buffer_start_idx

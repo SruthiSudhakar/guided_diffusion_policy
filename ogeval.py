@@ -10,17 +10,27 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:1 \
-                --object hammer \
-                --n_train 5 \
-                --n_test 5 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.16/17.26.03_train_classifier_15.00.33_classifier/checkpoints/epoch=0010-valid_accuracy=0.919 \
-                --guidance_scale 950 \
-                --guided_towards 1 \
-
-                --test_start_seed 5
+                --device cuda:5 \
+                --object mugbeige \
+                --n_train 50 \
+                --n_test 950 \
+                --test_start_seed 4000 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.16/16.30.32_train_classifier_classifier_mugbeige2/checkpoints/epoch=0005-valid_accuracy=0.896 \
+                --guidance_scale 2000 \
+                --guided_towards 1 
 
                 --save 
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/19.11.29_train_diffusion_unet_hybrid_15.00.33_needle_withguidance/checkpoints/epoch=0000-test_mean_score=0.360.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/19.11.29_train_diffusion_unet_hybrid_15.00.33_needle_withguidance/checkpoints/epoch=0000-test_mean_score=0.360/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
+                --max_steps 100 \
+                --device cuda:5 \
+                --object needle \
+                --n_train 50 \
+                --n_test 50 \
+                --test_start_seed 4000
+
+
 """
 
 import sys
@@ -59,7 +69,7 @@ import datetime
 def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save, test_start_seed):
     current_time = datetime.datetime.now()
     if classifier_dir:
-        output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}'
+        output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
     else:
         output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
     if os.path.exists(output_dir):
@@ -125,7 +135,10 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
         env_runner = hydra.utils.instantiate(
             cfg.task.env_runner,
             output_dir=output_dir)
-        runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
+        if isinstance(guidance_scale, str):
+            runner_log= env_runner.run(policy, classifier_policy, guidance_scale, float(guided_towards))
+        else:
+            runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
     else:
         # run eval
         env_runner = hydra.utils.instantiate(

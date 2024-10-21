@@ -102,6 +102,8 @@ class ReplayBuffer:
                 assert (int(value.shape[0]/2) == root['meta']['episode_ends'][-1]) or (value.shape[0] == root['meta']['episode_ends'][-1])
             elif key=='success':
                 assert True==True
+            elif key=='object':
+                assert True==True
             else:
                 assert(value.shape[0] == root['meta']['episode_ends'][-1])
         self.root = root

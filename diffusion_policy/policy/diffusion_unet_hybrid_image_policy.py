@@ -19,6 +19,7 @@ from robomimic.models.obs_core import CropRandomizer
 import diffusion_policy.model.vision.crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 import pdb
+import numpy as np
 
 class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def __init__(self, 
@@ -210,6 +211,15 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                 labels=torch.zeros(trajectory.shape[0]).unsqueeze(dim=-1).to(trajectory.device)+guided_towards
                 guidance_gradient = classifier_policy.compute_classifier_gradient( trajectory,  global_cond=global_cond, timesteps=timesteps, label=labels)
 
+                if guidance_scale == 'variable':
+                    guidance_scale = (model_output.mean() / guidance_gradient.mean())
+                    #round_to_nearest_power_of_10
+                    log10_guidance_scale = math.log10(abs(guidance_scale))
+                    nearest_power = round(log10_guidance_scale)
+                    guidance_scale = 10 ** nearest_power
+
+                guidance_scale=float(guidance_scale)
+
                 model_output += guidance_scale * guidance_gradient
 
             # 3. compute previous image: x_t -> x_t-1
@@ -298,7 +308,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def set_normalizer(self, normalizer: LinearNormalizer):
         self.normalizer.load_state_dict(normalizer.state_dict())
 
-    def compute_loss(self, batch):
+    def compute_loss(self, batch, classifier_policy=None, guidance_scale=None):
         # normalize input
         assert 'valid_mask' not in batch
         nobs = self.normalizer.normalize(batch['obs'])
@@ -361,8 +371,32 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         else:
             raise ValueError(f"Unsupported prediction type {pred_type}")
 
-        loss = F.mse_loss(pred, target, reduction='none')
-        loss = loss * loss_mask.type(loss.dtype)
+        mse_loss = F.mse_loss(pred, target, reduction='none')
+        loss = mse_loss * loss_mask.type(mse_loss.dtype)
+
+        if classifier_policy:
+            '''if its a negative sample, only use the classifier loss, if its a positive sample, use both classifier and mse loss'''
+            pred_trajectory=torch.zeros(noisy_trajectory.shape)
+            for idx in range(len(timesteps)):
+                pred_trajectory[idx] = self.noise_scheduler.step(pred[idx:idx+1], timesteps[idx], noisy_trajectory[idx:idx+1]).prev_sample
+
+            labels=torch.ones(pred_trajectory.shape[0])[:,np.newaxis]
+            device = noisy_trajectory.device
+            guidance_gradient = classifier_policy.compute_classifier_gradient( pred_trajectory.to(device),  global_cond=global_cond, timesteps=torch.zeros(labels.shape[0]).to(device), label=labels.to(device))
+            guidance_gradient = torch.abs(guidance_gradient)
+            
+            successes = batch['success']
+            loss[successes==0]= 0
+
+            # guidance_scale = (1/10) * (loss.mean() / guidance_gradient.mean())
+            # #round_to_nearest_power_of_10
+            # log10_guidance_scale = math.log10(guidance_scale)
+            # nearest_power = round(log10_guidance_scale)
+            # guidance_scale = 10 ** nearest_power
+
+            # print('loss', loss.mean(), 'guidance_gradient', guidance_gradient.mean(),'guidance_scale',guidance_scale,'guidance_gradient*guidance_scale',guidance_gradient.mean()*guidance_scale)
+            loss += guidance_scale * guidance_gradient
+            
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
 
         if self.negate_failure_losses != 0:
@@ -373,4 +407,6 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             loss = loss.mean(axis=1) * successes
 
         loss = loss.mean()
+        if classifier_policy:
+            return loss, mse_loss.mean(), (guidance_scale * guidance_gradient).mean()
         return loss

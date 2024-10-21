@@ -31,6 +31,7 @@ from accelerate import Accelerator
 import pdb
 from torch import nn
 import omegaconf 
+import matplotlib.pyplot as plt
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -86,14 +87,14 @@ class TrainClassifierWorkspace(BaseWorkspace):
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
-        accelerator = Accelerator(log_with='wandb')
-        wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
-        wandb_cfg.pop('project')
-        accelerator.init_trackers(
-            project_name=cfg.logging.project,
-            config=OmegaConf.to_container(cfg, resolve=True),
-            init_kwargs={"wandb": wandb_cfg}
-        )
+        accelerator = Accelerator()
+        # wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
+        # wandb_cfg.pop('project')
+        # accelerator.init_trackers(
+        #     project_name=cfg.logging.project,
+        #     config=OmegaConf.to_container(cfg, resolve=True),
+        #     init_kwargs={"wandb": wandb_cfg}
+        # )
 
         # resume training
         if cfg.training.resume:
@@ -131,17 +132,18 @@ class TrainClassifierWorkspace(BaseWorkspace):
         )
 
         # configure logging
-        wandb_run = wandb.init(
-            dir=str(self.output_dir),
-            config=OmegaConf.to_container(cfg, resolve=True),
-            **cfg.logging
-        )
-        wandb.config.update(
-            {
-                "output_dir": self.output_dir,
-            }, 
-            allow_val_change=True
-        )
+        # pdb.set_trace()
+        # wandb_run = wandb.init(
+        #     dir=str(self.output_dir),
+        #     config=OmegaConf.to_container(cfg, resolve=True),
+        #     **cfg.logging
+        # )
+        # wandb.config.update(
+        #     {
+        #         "output_dir": self.output_dir,
+        #     }, 
+        #     allow_val_change=True
+        # )
 
         # configure checkpoint
         topk_manager = TopKCheckpointManager(
@@ -237,6 +239,7 @@ class TrainClassifierWorkspace(BaseWorkspace):
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                         for batch_idx, batch in enumerate(tepoch):
                             # device transfer
+                            # pdb.set_trace()
                             batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                             # compute loss
                             loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
@@ -300,6 +303,9 @@ class TrainClassifierWorkspace(BaseWorkspace):
         self.model.eval()  
         valid_loss = list()
         valid_accuracy = list()
+        successes = list()
+        objects = list()
+        preds = list()
 
         step_log = dict()
         with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
@@ -310,12 +316,22 @@ class TrainClassifierWorkspace(BaseWorkspace):
                 # compute loss
                 loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
                 valid_loss.append(loss.item())
-                actual_out = (pred[:,0] > 0.5).float() * 1                            
+                actual_out = (pred[:,0] > 0.5).float() * 1  
                 equals = (batch['success'].float()  ==  actual_out.t()) + 0.0
+                preds.extend(equals.cpu().numpy())
                 valid_accuracy.append(torch.mean(equals).cpu().numpy())
+                if 'object' in batch:
+                    objects.extend(batch['object'])
+                successes.extend(batch['success'].cpu().numpy())
+
         step_log['valid_loss'] = np.mean(valid_loss)
         step_log['valid_accuracy'] = np.mean(valid_accuracy)
-            
+        step_log['equals'] = preds
+        step_log['gt_successes'] = successes
+        step_log['gt_objects'] = objects
+        step_log['val_dataset_stats'] = self.print_dataset_stats(val_dataset)
+        step_log['train_dataset_stats'] = self.print_dataset_stats(dataset)
+
         print('\tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  '.format(
             step_log['valid_loss'], step_log['valid_accuracy']))
 
@@ -325,6 +341,23 @@ class TrainClassifierWorkspace(BaseWorkspace):
             new_key = key.replace('/', '_')
             metric_dict[new_key] = value
         return metric_dict
+    def print_dataset_stats(self, dataset):
+        total_episodes = len(dataset.train_mask)
+        epsiodes_in_dataset = dataset.train_mask.sum()
+        dataset_indices = np.where(dataset.train_mask==True)[0]
+        successful_episodes = dataset.replay_buffer.data['success'][dataset_indices].sum()
+        fail_epsidoes = epsiodes_in_dataset - successful_episodes
+        return {
+            'total_episodes': total_episodes,
+            'epsiodes_in_dataset': epsiodes_in_dataset,
+            'successful_episodes': successful_episodes,
+            'fail_epsidoes': fail_epsidoes
+        }
+    def display_dataset(self, dataset):
+        dataset_indices=np.where(dataset.train_mask==True)
+        ep_starts = dataset.replay_buffer.episode_ends[dataset_indices]-dataset.replay_buffer.episode_lengths[dataset_indices]
+        for i in range(len(ep_starts)): 
+            plt.imsave(f'tempval/img_{i}.png', dataset.replay_buffer.data['agentview_image'][ep_starts[i]+10])
 
 @hydra.main(
     version_base=None,

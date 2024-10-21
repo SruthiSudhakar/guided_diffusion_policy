@@ -220,17 +220,14 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             obs_dict[key] = data[key][T_slice].astype(np.float32)
             del data[key]
 
+        torch_data = {
+            'obs': dict_apply(obs_dict, torch.from_numpy),
+            'action': torch.from_numpy(data['action'].astype(np.float32))
+        }            
         if 'success' in data:
-            torch_data = {
-                'obs': dict_apply(obs_dict, torch.from_numpy),
-                'action': torch.from_numpy(data['action'].astype(np.float32)),
-                'success': torch.from_numpy(data['success'].astype(np.float32))
-            }
-        else:
-            torch_data = {
-                'obs': dict_apply(obs_dict, torch.from_numpy),
-                'action': torch.from_numpy(data['action'].astype(np.float32))
-            }            
+            torch_data['success'] = torch.from_numpy(data['success'].astype(np.float32))
+        if 'object' in data:
+            torch_data['object'] = torch.from_numpy(data['object'].astype(np.float32))
         return torch_data
 
 
@@ -300,16 +297,27 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         # save lowdim data
         if 'success' in demos[f'demo_0'].keys():
             add_ons_list = ['action', 'success']
+        if 'object' in demos[f'demo_0'].keys():
+            add_ons_list = ['action', 'success', 'object']
         for key in tqdm(lowdim_keys + add_ons_list, desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':
                 data_key = 'actions'
             if key == 'success':
                 data_key = 'success'
+            if key == 'object':
+                data_key = 'object'
             this_data = list()
             for i in range(len(demos)):
                 demo = demos[f'demo_{i}']
-                this_data.append(demo[data_key][:].astype(np.float32))
+                if key=='object':
+                    object_name = int.from_bytes(demo[data_key].asstr()[()].encode('utf-8'), 'little')
+                    this_data.append([object_name])
+                else:
+                    try:
+                        this_data.append(demo[data_key][:].astype(np.float32))
+                    except:
+                        pdb.set_trace()
             this_data = np.concatenate(this_data, axis=0)
             if key == 'action':
                 this_data = _convert_actions(
@@ -321,8 +329,14 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             elif key == 'success':
                 print('SIZE OF SUCCESS', this_data.shape)
                 assert True==True
+            elif key == 'object':
+                print('SIZE OF OBJECT', this_data.shape)
+                assert True==True
             else:
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['obs'][key]['shape'])
+            
+            if key=='object':
+                this_data=this_data.astype(np.float32)
             _ = data_group.array(
                 name=key,
                 data=this_data,
