@@ -12,6 +12,9 @@ from diffusion_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from diffusion_policy.model.vision.multi_image_obs_encoder import MultiImageObsEncoder
 from diffusion_policy.common.pytorch_util import dict_apply
 
+import pdb
+
+
 class DiffusionUnetImagePolicy(BaseImagePolicy):
     def __init__(self, 
             shape_meta: dict,
@@ -67,12 +70,12 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             action_visible=False
         )
         self.normalizer = LinearNormalizer()
-        self.horizon = horizon
-        self.obs_feature_dim = obs_feature_dim
-        self.action_dim = action_dim
-        self.n_action_steps = n_action_steps
-        self.n_obs_steps = n_obs_steps
-        self.obs_as_global_cond = obs_as_global_cond
+        self.horizon = horizon #16
+        self.obs_feature_dim = obs_feature_dim #1033
+        self.action_dim = action_dim #10
+        self.n_action_steps = n_action_steps #8
+        self.n_obs_steps = n_obs_steps #2
+        self.obs_as_global_cond = obs_as_global_cond #true
         self.kwargs = kwargs
 
         if num_inference_steps is None:
@@ -239,6 +242,8 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
 
         # apply conditioning
         noisy_trajectory[condition_mask] = cond_data[condition_mask]
+        
+        pdb.set_trace()
         
         # Predict the noise residual
         pred = self.model(noisy_trajectory, timesteps, 

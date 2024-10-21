@@ -1,5 +1,8 @@
 name: lift_image
 
+train_subset: null
+val_subset: null
+
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:

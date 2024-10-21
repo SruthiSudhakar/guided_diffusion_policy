@@ -22,7 +22,7 @@ import numpy as np
 import shutil
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.policy.diffusion_unet_image_policy import DiffusionUnetImagePolicy
-from diffusion_policy.dataset.base_dataset import BaseImageDataset, BaseDataset
+from diffusion_policy.dataset.base_dataset import BaseImageDataset#, BaseDataset
 from diffusion_policy.env_runner.base_image_runner import BaseImageRunner
 from diffusion_policy.common.checkpoint_util import TopKCheckpointManager
 from diffusion_policy.common.json_logger import JsonLogger
@@ -30,6 +30,9 @@ from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 from diffusion_policy.model.diffusion.ema_model import EMAModel
 from diffusion_policy.model.common.lr_scheduler import get_scheduler
 from accelerate import Accelerator
+
+import pdb
+
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -62,38 +65,64 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         self.epoch = 0
 
         # do not save optimizer if resume=False
-        if not cfg.training.resume:
-            self.exclude_keys = ['optimizer']
+        # if not cfg.training.resume:
+        self.exclude_keys = ['optimizer']
 
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
-        accelerator = Accelerator(log_with='wandb')
-        wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
-        wandb_cfg.pop('project')
-        accelerator.init_trackers(
-            project_name=cfg.logging.project,
-            config=OmegaConf.to_container(cfg, resolve=True),
-            init_kwargs={"wandb": wandb_cfg}
-        )
+        accelerator = Accelerator()#log_with='wandb')
+        # wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
+        # wandb_cfg.pop('project')
+        # accelerator.init_trackers(
+        #     project_name=cfg.logging.project,
+        #     config=OmegaConf.to_container(cfg, resolve=True),
+        #     init_kwargs={"wandb": wandb_cfg}
+        # )
 
         # resume training
         if cfg.training.resume:
             lastest_ckpt_path = self.get_checkpoint_path()
-            if lastest_ckpt_path.is_file():
-                accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
+            # if lastest_ckpt_path.is_file():
+            #     accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
+            #     self.load_checkpoint(path=lastest_ckpt_path)
+            try:
+                accelerator.print(f"Resuming from checkpoint {latest_ckpt_path}")
+                self.load_checkpoint(path=latest_ckpt_path)
+                self.global_step=0
+                self.epoch=0
+            except:
+                pdb.set_trace()
 
         # configure dataset
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
-        assert isinstance(dataset, BaseImageDataset) or isinstance(dataset, BaseDataset)
+        assert isinstance(dataset, BaseImageDataset)# or isinstance(dataset, BaseDataset)
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
-        normalizer = dataset.get_normalizer()
+        '''
+        train dataset: 51683 train dataloader: 51
+        val dataset: 1264 val dataloader: 2
+        '''
+        if cfg.task.train_subset:
+            train_subset = torch.utils.data.Subset(dataset, random.sample(range(0,len(train_dataloader.dataset)), cfg.task.train_subset))
+            train_dataloader = DataLoader(train_subset, **cfg.dataloader)
+
+        # compute normalizer on the main process and save to disk
+        normalizer_path = os.path.join(self.output_dir, 'normalizer.pkl')
+        if accelerator.is_main_process:
+            normalizer = dataset.get_normalizer()
+            pickle.dump(normalizer, open(normalizer_path, 'wb'))
+
+        # load normalizer on all processes
+        accelerator.wait_for_everyone()
+        normalizer = pickle.load(open(normalizer_path, 'rb'))
 
         # configure validation dataset
         val_dataset = dataset.get_validation_dataset()
         val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        if cfg.task.val_subset:
+            val_subset = torch.utils.data.Subset(val_dataset, random.sample(range(0,len(val_dataloader.dataset)), cfg.task.val_subset))
+            val_dataloader = torch.utils.data.DataLoader(val_subset, **cfg.val_dataloader)
         print('train dataset:', len(dataset), 'train dataloader:', len(train_dataloader))
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
 
@@ -196,7 +225,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         train_sampling_batch = batch
 
                         # compute loss
-                        raw_loss = self.model(batch)
+                        raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch)
+
                         loss = raw_loss / cfg.training.gradient_accumulate_every
                         loss.backward()
 
@@ -281,14 +311,14 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         # sample trajectory from training set, and evaluate difference
                         batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
                         gt_action = batch['action']
-                        pred_action = policy.predict_action(batch['obs'], None)['action_pred']
+                        pred_action = policy.predict_action(batch['obs'])['action_pred']
                         log_action_mse(step_log, 'train', pred_action, gt_action)
 
                         if len(val_dataloader) > 0:
                             val_sampling_batch = next(iter(val_dataloader))
                             batch = dict_apply(val_sampling_batch, lambda x: x.to(device, non_blocking=True))
                             gt_action = batch['action']
-                            pred_action = policy.predict_action(batch['obs'], None)['action_pred']
+                            pred_action = policy.predict_action(batch['obs'])['action_pred']
                             log_action_mse(step_log, 'val', pred_action, gt_action)
 
                         del batch
