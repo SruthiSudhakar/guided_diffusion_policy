@@ -1,7 +1,7 @@
 """
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
-conda activate robodiff
+conda activate jgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 
 Usage:

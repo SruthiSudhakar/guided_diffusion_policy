@@ -2,7 +2,7 @@
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
-conda activate robodiff
+conda activate jgdrobodiff
 
 Usage:
 
@@ -20,14 +20,14 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 
 
                 --save 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/19.11.29_train_diffusion_unet_hybrid_15.00.33_needle_withguidance/checkpoints/epoch=0000-test_mean_score=0.360.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/19.11.29_train_diffusion_unet_hybrid_15.00.33_needle_withguidance/checkpoints/epoch=0000-test_mean_score=0.360/ \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/14.56.37_train_diffusion_unet_hybrid_15.00.33_hammer_successfulonly/checkpoints/epoch=0700-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/14.56.37_train_diffusion_unet_hybrid_15.00.33_hammer_successfulonly/checkpoints/epoch=0700-test_mean_score=0.940/TEST \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
                 --device cuda:5 \
-                --object needle \
+                --object hammer \
                 --n_train 50 \
-                --n_test 50 \
+                --n_test 950 \
                 --test_start_seed 4000
 
 

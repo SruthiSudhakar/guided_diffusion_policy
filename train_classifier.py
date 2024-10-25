@@ -1,7 +1,7 @@
 """
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
-conda activate robodiff
+conda activate jgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 
 
@@ -13,12 +13,12 @@ accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=2 --main_process_
     --config-name=image_square_ph_classifier.yaml \
     training.seed=42 \
     training.device=2 \
-    dataloader.batch_size=1024 \
-    val_dataloader.batch_size=1024 \
+    dataloader.batch_size=64 \
+    val_dataloader.batch_size=64 \
     hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier_mugbeige2' \
     task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_all.hdf5 \
     task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_all.hdf5 \
-    training.checkpoint_every=1 \
+    training.checkpoint_every=10 \
     +task.env_runner.object=mubeige
 
 

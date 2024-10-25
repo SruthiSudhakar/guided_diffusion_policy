@@ -127,7 +127,7 @@ Grab config file for the corresponding experiment:
 ### Running for a single seed
 Activate conda environment and login to [wandb](https://wandb.ai) (if you haven't already).
 ```console
-[diffusion_policy]$ conda activate robodiff
+[diffusion_policy]$ conda activate jgdrobodiff
 (robodiff)[diffusion_policy]$ wandb login
 ```
 
