@@ -1,12 +1,14 @@
 """
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
+source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate jgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
+export HYDRA_FULL_ERROR=1
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.16/16.30.32_train_classifier_classifier_mugbeige2/checkpoints/epoch=0005-valid_accuracy=0.896 \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2/data_all.hdf5 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.28/17.07.02_train_classifier_classifier_hammer2seed6000/checkpoints/epoch=0021-valid_accuracy=0.775 \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5 \
                 --device cuda:5
 
 """
@@ -71,6 +73,7 @@ def main(checkpoint, dataset_path, device):
     tn = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].sum()
     fp = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].shape[0] - np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==0)[0]].sum()
     fn = np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==1)[0]].shape[0]- np.array(stats['equals'])[np.where(np.array(stats['gt_successes'])==1)[0]].sum()
+    precision = tp/(tp+fp)
     acc_per_class = {}
 
     for key, value in stats.items():
@@ -81,6 +84,7 @@ def main(checkpoint, dataset_path, device):
     json_log['tn'] = tn
     json_log['fp'] = fp
     json_log['fn'] = fn
+    json_log['precision'] = precision
 
     if len(stats['gt_objects']) > 0:
         for gt_object in stats['gt_objects']:

@@ -12,7 +12,7 @@ import hydra
 import torch
 from omegaconf import OmegaConf
 import pathlib
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import copy
 import random
 import wandb
@@ -84,6 +84,71 @@ class TrainClassifierWorkspace(BaseWorkspace):
         if not cfg.training.resume:
             self.exclude_keys = ['optimizer']
 
+    def visualise_dataloader(self, dl, whichone, id_to_label=None, with_outputs=True):
+        total_num_images = len(dl.dataset)
+        idxs_seen = []
+        class_0_batch_counts = []
+        class_1_batch_counts = []
+        with tqdm.tqdm(dl, desc=f"Training epoch {self.epoch}", 
+            leave=False) as tepoch:
+            for batch_idx, batch in enumerate(tepoch):
+                classes = batch['success']
+                class_ids, class_counts = classes.unique(return_counts=True)
+                class_ids = set(class_ids.tolist())
+                class_counts = class_counts.tolist()
+
+                if len(class_ids) == 2:
+                    class_0_batch_counts.append(class_counts[0])
+                    class_1_batch_counts.append(class_counts[1])
+                elif len(class_ids) == 1 and 0 in class_ids:
+                    class_0_batch_counts.append(class_counts[0])
+                    class_1_batch_counts.append(0)
+                elif len(class_ids) == 1 and 1 in class_ids:
+                    class_0_batch_counts.append(0)
+                    class_1_batch_counts.append(class_counts[0])
+                else:
+                    raise ValueError("More than two classes detected")
+                idxs_seen.extend(classes)
+
+        if with_outputs:
+            fig, ax = plt.subplots(1, figsize=(50,50))
+
+            ind = np.arange(len(class_0_batch_counts))
+            width = 0.35
+
+            ax.bar(
+                ind,
+                class_0_batch_counts,
+                width,
+                label=(id_to_label[0] if id_to_label is not None else "0"),
+            )
+            ax.bar(
+                ind + width,
+                class_1_batch_counts,
+                width,
+                label=(id_to_label[1] if id_to_label is not None else "1"),
+            )
+            ax.set_xticks(ind, ind + 1)
+            ax.set_xlabel("Batch index", fontsize=12)
+            ax.set_ylabel("No. of images in batch", fontsize=12)
+            ax.set_aspect("equal")
+
+            plt.legend()
+            plt.savefig(f'classdata_{whichone}.png')
+
+            num_images_seen = len(idxs_seen)
+
+            print(
+                f'Avg Proportion of {(id_to_label[0] if id_to_label is not None else "Class 0")} per batch: {(np.array(class_0_batch_counts) / 10).mean()}'
+            )
+            print(
+                f'Avg Proportion of {(id_to_label[1] if id_to_label is not None else "Class 1")} per batch: {(np.array(class_1_batch_counts) / 10).mean()}'
+            )
+            print("=============")
+            print(f"Num. unique images seen: {len(set(idxs_seen))}/{total_num_images}")
+        return class_0_batch_counts, class_1_batch_counts, idxs_seen
+
+
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
@@ -107,14 +172,56 @@ class TrainClassifierWorkspace(BaseWorkspace):
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         assert isinstance(dataset, BaseImageDataset)
+
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        target = []
+        for i in train_dataloader.dataset:
+            target.append(i['success'])
+        target = np.array(target)
+        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
+        weight = 1. / class_sample_count
+        samples_weight = np.array([weight[int(t)] for t in target])
+        samples_weight = torch.from_numpy(samples_weight)
+        samples_weigth = samples_weight.double()
+        sampler = WeightedRandomSampler(samples_weight, len(dataset), replacement=True)
+
+        train_dataloader = DataLoader(dataset, **cfg.dataloader, sampler=sampler)
+
         normalizer = dataset.get_normalizer()
 
         # configure validation dataset
         val_dataset = dataset.get_validation_dataset()
         val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        target = []
+        for i in val_dataloader.dataset:
+            target.append(i['success'])
+        target = np.array(target)
+        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
+        weight = 1. / class_sample_count
+        samples_weight = np.array([weight[int(t)] for t in target])
+        samples_weight = torch.from_numpy(samples_weight)
+        samples_weigth = samples_weight.double()
+        sampler = WeightedRandomSampler(weights=samples_weight, num_samples=len(val_dataset), replacement=True)
+
+        val_dataloader = DataLoader(val_dataset, sampler=sampler, **cfg.val_dataloader)
         print('train dataset:', len(dataset), 'train dataloader:', len(train_dataloader))
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
+
+        class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(train_dataloader, 'train', {0: "failures", 1: "successes"})
+        class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(val_dataloader, 'validation', {0: "failures", 1: "successes"})
+        total_0 = 0
+        total_1 = 0
+        for batch in train_dataloader:   
+            total_0 += (batch['success'] == 0).sum()
+            total_1 += (batch['success'] == 1).sum()
+        print('TRAIN DATA WEIGHTED BALANCED', total_0, total_1)
+        total_0 = 0
+        total_1 = 0
+        for batch in val_dataloader:   
+            total_0 += (batch['success'] == 0).sum()
+            total_1 += (batch['success'] == 1).sum()
+        print(total_0, total_1)
+        print('VALDATON DATA WEIGHTED BALANCED', total_0, total_1)
 
         self.model.set_normalizer(normalizer)
 
@@ -132,7 +239,6 @@ class TrainClassifierWorkspace(BaseWorkspace):
         )
 
         # configure logging
-        # pdb.set_trace()
         # wandb_run = wandb.init(
         #     dir=str(self.output_dir),
         #     config=OmegaConf.to_container(cfg, resolve=True),
@@ -239,7 +345,6 @@ class TrainClassifierWorkspace(BaseWorkspace):
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                         for batch_idx, batch in enumerate(tepoch):
                             # device transfer
-                            # pdb.set_trace()
                             batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                             # compute loss
                             loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
@@ -296,6 +401,24 @@ class TrainClassifierWorkspace(BaseWorkspace):
         val_dataset = dataset.get_validation_dataset()
         val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
+        target = []
+        for i in val_dataloader.dataset:
+            target.append(i['success'])
+        target = np.array(target)
+        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
+        weight = 1. / class_sample_count
+        samples_weight = np.array([weight[int(t)] for t in target])
+        samples_weight = torch.from_numpy(samples_weight)
+        samples_weigth = samples_weight.double()
+        sampler = WeightedRandomSampler(weights=samples_weight, num_samples=len(val_dataset), replacement=True)
+        val_dataloader = DataLoader(val_dataset, sampler=sampler, **cfg.val_dataloader)
+        print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
+        total_0 = 0
+        total_1 = 0
+        for batch in val_dataloader:   
+            total_0 += (batch['success'] == 0).sum()
+            total_1 += (batch['success'] == 1).sum()
+        print('TRAIN DATA WEIGHTED BALANCED', total_0, total_1)
 
         self.model.set_normalizer(normalizer)
 

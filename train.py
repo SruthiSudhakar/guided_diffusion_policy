@@ -1,13 +1,15 @@
 """
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
+source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate jgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
+export HYDRA_FULL_ERROR=1
 
 Usage:
 Training:
 
-accelerate launch --multi_gpu --num_machines 1 --num_processes=2 --gpu_ids=0,1 --main_process_port=8098 train.py \
+accelerate launch --multi_gpu --num_machines 1 --num_processes=2 --gpu_ids=0,1,2,3 --main_process_port=8084 train.py \
     --config-dir=. \
     --config-name=image_square_ph_diffusion_policy_cnn.yaml \
     training.seed=42 \
@@ -23,6 +25,19 @@ accelerate launch --multi_gpu --num_machines 1 --num_processes=2 --gpu_ids=0,1 -
     training.resume=/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch_0150_0.940.ckpt \
     training.classifier_dir=/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.13/15.54.25_train_classifier_classifier_needle/checkpoints/epoch_8_validacc_0.928.ckpt \
     training.guidance_scale=9.5 \
+    +task.env_runner.object=needle
+
+python train.py \
+    --config-dir=. \
+    --config-name=image_square_ph_diffusion_policy_cnn.yaml \
+    training.seed=42 \
+    dataloader.batch_size=1024 \
+    val_dataloader.batch_size=1024 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_test' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2/data_all.hdf5 \
+    task.env_runner.max_steps=100 \
     +task.env_runner.object=needle
 
 

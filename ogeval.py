@@ -1,8 +1,10 @@
 """
-cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
+source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate jgdrobodiff
+cd /proj/vondrick3/sruthi/robots/diffusion_policy
+export HYDRA_FULL_ERROR=1
 
 Usage:
 
@@ -10,21 +12,21 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:5 \
-                --object mugbeige \
+                --device cuda:3 \
+                --object hammer \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.16/16.30.32_train_classifier_classifier_mugbeige2/checkpoints/epoch=0005-valid_accuracy=0.896 \
-                --guidance_scale 2000 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.28/17.07.02_train_classifier_classifier_hammer2seed6000/checkpoints/epoch=0021-valid_accuracy=0.775 \
+                --guidance_scale 5000 \
                 --guided_towards 1 
 
                 --save 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/14.56.37_train_diffusion_unet_hybrid_15.00.33_hammer_successfulonly/checkpoints/epoch=0700-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.18/14.56.37_train_diffusion_unet_hybrid_15.00.33_hammer_successfulonly/checkpoints/epoch=0700-test_mean_score=0.940/TEST \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:5 \
+                --device cuda:2 \
                 --object hammer \
                 --n_train 50 \
                 --n_test 950 \

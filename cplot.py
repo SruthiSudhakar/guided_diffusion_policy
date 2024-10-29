@@ -25,12 +25,6 @@ for line in Lines:
         valid_losses.append(valid_losses[-1])
         valid_accuracy.append(valid_accuracy[-1])
 
-plt.plot(global_step, train_losses, label = "train_loss")   # Plot the chart
-plt.plot(global_step, valid_losses[1:], label = "valid_loss")   # Plot the chart
-plt.plot(global_step, valid_accuracy[1:], label = "valid_accuracy")   # Plot the chart
-plt.legend()
-plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_gs.png')  # displayplt.plot(global_step, train_losses, label = "train_loss")   # Plot the chart
-plt.clf()
 print('/'.join(filename.split('/')[:-1])+'/trainloss_gs.png')
 plt.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
 plt.plot(epoch, valid_losses[1:], label = "valid_loss")   # Plot the chart

@@ -2,6 +2,7 @@
 Usage:
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
+export HYDRA_FULL_ERROR=1
 
 tbd:
 python eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.06.05/15.00.33_train_diffusion_unet_hybrid_liftph/checkpoints/epoch=0150-test_mean_score=0.980.ckpt \

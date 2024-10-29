@@ -1,8 +1,10 @@
 """
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
+source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate jgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
+export HYDRA_FULL_ERROR=1
 
 Usage:
 Training:
