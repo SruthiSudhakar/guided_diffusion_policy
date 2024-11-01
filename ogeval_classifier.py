@@ -7,8 +7,8 @@ cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.28/17.07.02_train_classifier_classifier_hammer2seed6000/checkpoints/epoch=0021-valid_accuracy=0.775 \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/13.19.05_train_classifier_classifier_needle2seed6000/checkpoints/epoch=0002-valid_accuracy=0.743 \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
                 --device cuda:5
 
 """

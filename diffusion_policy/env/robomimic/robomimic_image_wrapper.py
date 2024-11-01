@@ -128,7 +128,7 @@ class RobomimicImageWrapper(gym.Env):
         RIW2: <robosuite.robots.single_arm.SingleArm object at 0x7fb9342645e0>                                                                                                                                              
         RIW1: <robosuite.models.grippers.panda_gripper.PandaGripper object at 0x7fb9342bb520>                                                                                                                               
         '''
-        check_grasp = self.env.env._check_grasp(gripper=self.env.env.robots[0].gripper, object_geoms=self.env.env.cube)
+        check_grasp = False #self.env.env._check_grasp(gripper=self.env.env.robots[0].gripper, object_geoms=self.env.env.cube)
         return check_grasp
 
     def get_reset_states(self):

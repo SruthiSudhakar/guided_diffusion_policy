@@ -10,19 +10,19 @@ export HYDRA_FULL_ERROR=1
 Usage:
 Training:
 
-accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=4 --main_process_port=8088 train.py \
+accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=4 --main_process_port=8088
+python train.py \
     --config-dir=. \
     --config-name=image_square_ph_classifier.yaml \
     training.seed=42 \
     training.device=3 \
     dataloader.batch_size=1024 \
     val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier_hammer2seed6000' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier_combined2seed6000' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
     training.checkpoint_every=1 \
-    optimizer.lr=0.00001 \
-    +task.env_runner.object=hammer
+    +task.env_runner.object=needle
 
 
 accelerate launch --multi_gpu --num_machines 1 --num_processes=1 --gpu_ids=1 --main_process_port=8080 train.py \

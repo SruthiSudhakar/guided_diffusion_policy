@@ -2,7 +2,7 @@ import pdb, json, sys
 import matplotlib.pyplot as plt
 import numpy as np
 import mpld3
-
+from matplotlib.widgets import CheckButtons
 # Using readlines()
 filename = sys.argv[1]
 file1 = open(filename, 'r')
@@ -56,10 +56,18 @@ epoch=epoch[1:]
 fig, ax = plt.subplots()
 plt.subplots_adjust(left=0.2)
 
-line1, = ax.plot(epochs, test_mean_score, label='Test Mean Score')
-line2, = ax.plot(epochs, test_mean_loss, label='Test Mean Loss')
+line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
+line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
+line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
+plt.legend()
 
-print('/'.join(filename.split('/')[:-1])+'/trainloss_gs.png')
+plt.show()
+
+plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display
+
+fig, ax = plt.subplots()
+plt.subplots_adjust(left=0.2)
+
 line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
 line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
 line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
@@ -91,8 +99,4 @@ def toggle_visibility(label):
 
 check.on_clicked(toggle_visibility)
 
-mpld3.save_html(fig, '/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')
-
-plt.show()
-
-# plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display
+mpld3.save_html(fig, '/'.join(filename.split('/')[:-1])+'/trainloss_epoch.html')

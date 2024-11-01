@@ -226,8 +226,8 @@ class RobomimicReplayImageDataset(BaseImageDataset):
         }            
         if 'success' in data:
             torch_data['success'] = torch.from_numpy(data['success'].astype(np.float32))
-        if 'object' in data:
-            torch_data['object'] = torch.from_numpy(data['object'].astype(np.float32))
+        # if 'object' in data:
+        #     torch_data['object'] = torch.from_numpy(data['object'].astype(np.float32))
         return torch_data
 
 
@@ -297,8 +297,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         # save lowdim data
         if 'success' in demos[f'demo_0'].keys():
             add_ons_list = ['success']
-        if 'object' in demos[f'demo_0'].keys():
-            add_ons_list = ['success', 'object']
+        # if 'object' in demos[f'demo_0'].keys():
+        #     add_ons_list = ['success', 'object']
         for key in tqdm(lowdim_keys + add_ons_list + ['action'], desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':

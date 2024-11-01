@@ -12,7 +12,7 @@ src
 **/.DS_Store
 
 fuse.cfg
-
+*.mp4
 *.ai
 *.hdf5*
 *.png

@@ -12,26 +12,35 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:3 \
-                --object hammer \
+                --device cuda:1 \
+                --object needle \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.28/17.07.02_train_classifier_classifier_hammer2seed6000/checkpoints/epoch=0021-valid_accuracy=0.775 \
-                --guidance_scale 5000 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/13.19.05_train_classifier_classifier_needle2seed6000/checkpoints/epoch=0002-valid_accuracy=0.743 \
+                --guidance_scale 1500 \
                 --guided_towards 1 
 
                 --save 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/07.47.02_train_diffusion_unet_hybrid_15.00.33_hammer_withguidance_dataall_subset/checkpoints/epoch=0000-test_mean_score=0.900.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/07.47.02_train_diffusion_unet_hybrid_15.00.33_hammer_withguidance_dataall_subset/checkpoints/epoch=0000-test_mean_score=0.900/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:2 \
+                --device cuda:3 \
                 --object hammer \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000
 
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/08.42.53_train_diffusion_unet_hybrid_pickplacecan/checkpoints/epoch=0150-test_mean_score=0.000.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/08.42.53_train_diffusion_unet_hybrid_pickplacecan/checkpoints/epoch=0150-test_mean_score=0.000/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/can/ph/image_abs.hdf5 \
+                --max_steps 100 \
+                --device cuda:1 \
+                --n_train 50 \
+                --n_test 50 \
+                --test_start_seed 6000 \
+                --save 
 
 """
 
@@ -65,7 +74,7 @@ import datetime
 @click.option('-n_train', '--n_train', required=True)
 @click.option('-n_test', '--n_test', required=True)
 @click.option('-test_start_seed', '--test_start_seed', required=False)
-@click.option('-object', '--object', default='block')
+@click.option('-object', '--object', default=None)
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
 def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save, test_start_seed):

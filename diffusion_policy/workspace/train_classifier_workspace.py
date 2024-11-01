@@ -443,8 +443,8 @@ class TrainClassifierWorkspace(BaseWorkspace):
                 equals = (batch['success'].float()  ==  actual_out.t()) + 0.0
                 preds.extend(equals.cpu().numpy())
                 valid_accuracy.append(torch.mean(equals).cpu().numpy())
-                if 'object' in batch:
-                    objects.extend(batch['object'])
+                # if 'object' in batch:
+                #     objects.extend(batch['object'])
                 successes.extend(batch['success'].cpu().numpy())
 
         step_log['valid_loss'] = np.mean(valid_loss)

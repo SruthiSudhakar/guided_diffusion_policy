@@ -81,7 +81,8 @@ class RobomimicImageRunner(BaseImageRunner):
         # read from dataset
         env_meta = FileUtils.get_env_metadata_from_dataset(
             dataset_path)
-        env_meta['env_name'] = 'LiftOtherObjects'
+        if self.object:
+            env_meta['env_name'] = 'LiftOtherObjects'
         # disable object state observation
         env_meta['env_kwargs']['use_object_obs'] = False
 
