@@ -8,7 +8,7 @@ checkpoint:
     mode: max
     monitor_key: valid_accuracy
 dataloader:
-  batch_size: 64
+  batch_size: 1024
   num_workers: 8
   persistent_workers: false
   pin_memory: true
@@ -133,6 +133,7 @@ shape_meta:
       - 2
 task:
   abs_action: true
+  balance_dataset: false
   dataset:
     _target_: diffusion_policy.dataset.robomimic_replay_image_dataset.RobomimicReplayImageDataset
     abs_action: true
@@ -220,7 +221,7 @@ training:
   use_ema: true
   val_every: 50
 val_dataloader:
-  batch_size: 64
+  batch_size: 1024
   num_workers: 8
   persistent_workers: false
   pin_memory: true

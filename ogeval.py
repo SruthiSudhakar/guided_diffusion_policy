@@ -9,39 +9,50 @@ export HYDRA_FULL_ERROR=1
 Usage:
 
 python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/ \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/4wredcube/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:1 \
-                --object needle \
+                --device cuda:4 \
+                --object 4wredcube \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/13.19.05_train_classifier_classifier_needle2seed6000/checkpoints/epoch=0002-valid_accuracy=0.743 \
-                --guidance_scale 1500 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0004_valid_accuracy=0.905 \
+                --guidance_scale 3 \
                 --guided_towards 1 
+                \
+                --save
 
-                --save 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/07.47.02_train_diffusion_unet_hybrid_15.00.33_hammer_withguidance_dataall_subset/checkpoints/epoch=0000-test_mean_score=0.900.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/07.47.02_train_diffusion_unet_hybrid_15.00.33_hammer_withguidance_dataall_subset/checkpoints/epoch=0000-test_mean_score=0.900/ \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/18.03.45_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0500-test_mean_score=0.880.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/18.03.45_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0500-test_mean_score=0.880/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:3 \
+                --device cuda:2 \
                 --object hammer \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/08.42.53_train_diffusion_unet_hybrid_pickplacecan/checkpoints/epoch=0150-test_mean_score=0.000.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/08.42.53_train_diffusion_unet_hybrid_pickplacecan/checkpoints/epoch=0150-test_mean_score=0.000/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/can/ph/image_abs.hdf5 \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/17.49.53_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0900-test_mean_score=0.960.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/17.49.53_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0900-test_mean_score=0.960/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
+                --max_steps 100 \
+                --device cuda:4 \
+                --object hammer \
+                --n_train 50 \
+                --n_test 950 \
+                --test_start_seed 4000 
+                \
+                --save 
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/16.40.19_train_diffusion_unet_hybrid_15.00.33_hammer_successful/checkpoints/epoch=0200-test_mean_score=0.840.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/16.40.19_train_diffusion_unet_hybrid_15.00.33_hammer_successful/checkpoints/epoch=0200-test_mean_score=0.840/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
                 --device cuda:1 \
+                --object hammer \
                 --n_train 50 \
-                --n_test 50 \
-                --test_start_seed 6000 \
-                --save 
-
+                --n_test 100 \
+                --test_start_seed 4000                     
 """
 
 import sys
@@ -80,9 +91,9 @@ import datetime
 def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save, test_start_seed):
     current_time = datetime.datetime.now()
     if classifier_dir:
-        output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
+        output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
     else:
-        output_dir+=f'{add}alift_{object}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
+        output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
     if os.path.exists(output_dir):
         click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
     pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)

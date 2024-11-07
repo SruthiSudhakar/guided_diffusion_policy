@@ -12,7 +12,7 @@ import hydra
 import torch
 from omegaconf import OmegaConf
 import pathlib
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, WeightedRandomSampler, ConcatDataset
 import copy
 import random
 import wandb
@@ -169,59 +169,86 @@ class TrainClassifierWorkspace(BaseWorkspace):
                 self.load_checkpoint(path=lastest_ckpt_path)
 
         # configure dataset
-        dataset: BaseImageDataset
-        dataset = hydra.utils.instantiate(cfg.task.dataset)
-        assert isinstance(dataset, BaseImageDataset)
-
-        train_dataloader = DataLoader(dataset, **cfg.dataloader)
-        target = []
-        for i in train_dataloader.dataset:
-            target.append(i['success'])
-        target = np.array(target)
-        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
-        weight = 1. / class_sample_count
-        samples_weight = np.array([weight[int(t)] for t in target])
-        samples_weight = torch.from_numpy(samples_weight)
-        samples_weigth = samples_weight.double()
-        sampler = WeightedRandomSampler(samples_weight, len(dataset), replacement=True)
-
-        train_dataloader = DataLoader(dataset, **cfg.dataloader, sampler=sampler)
-
-        normalizer = dataset.get_normalizer()
+        dataset_combined: BaseImageDataset
+        datasets=[]
+        for each_dataset in cfg.task.dataset_path:
+            cfg.task.dataset.dataset_path = each_dataset
+            datasets.append(hydra.utils.instantiate(cfg.task.dataset))
+        dataset_combined = ConcatDataset(datasets)
+        assert isinstance(datasets[0], BaseImageDataset)
+        train_dataloader = DataLoader(dataset_combined, **cfg.dataloader)
+        if 'balance_dataset' in cfg.task and cfg.task.balance_dataset:
+            prefix = '__'.join([dataset_path.split('/')[-2] for dataset_path in cfg.task.dataset_path])+'_samples_weight_train_dataloader.npy'
+            if os.path.exists(prefix):
+                print('USING SAVED SAMPLE WEIGHTS', prefix)
+                samples_weight = np.load(prefix)
+            else:
+                samples_weight=[]
+                print('calculating sample weights')
+                with tqdm.tqdm(train_dataloader) as tepoch:
+                    for batch_idx, batch in enumerate(tepoch):
+                        samples_weight.extend(batch['success'].tolist())
+                successes_count = sum(samples_weight)
+                failures_count = len(samples_weight)-successes_count
+                weight = 1. / np.array([successes_count,failures_count])
+                samples_weight=np.array(samples_weight)
+                samples_weight[np.isclose(samples_weight, 1.0)] = weight[0]
+                samples_weight[np.isclose(samples_weight, 0.0)] = weight[1]
+                np.save(prefix, samples_weight)
+                samples_weight = torch.from_numpy(samples_weight)
+                samples_weight = samples_weight.double()
+            sampler = WeightedRandomSampler(samples_weight, len(dataset_combined), replacement=True)
+            train_dataloader = DataLoader(dataset_combined, **cfg.dataloader, sampler=sampler)
+        normalizer = datasets[0].get_multidataset_normalizer(datasets)
 
         # configure validation dataset
-        val_dataset = dataset.get_validation_dataset()
-        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
-        target = []
-        for i in val_dataloader.dataset:
-            target.append(i['success'])
-        target = np.array(target)
-        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
-        weight = 1. / class_sample_count
-        samples_weight = np.array([weight[int(t)] for t in target])
-        samples_weight = torch.from_numpy(samples_weight)
-        samples_weigth = samples_weight.double()
-        sampler = WeightedRandomSampler(weights=samples_weight, num_samples=len(val_dataset), replacement=True)
+        val_dataset = [dataset.get_validation_dataset() for dataset in datasets]
+        val_dataset_combined = ConcatDataset(val_dataset)
+        val_dataloader = DataLoader(val_dataset_combined, **cfg.val_dataloader)
+        
+        if 'balance_dataset' in cfg.task and cfg.task.balance_dataset:
+            prefix = '__'.join([dataset_path.split('/')[-2] for dataset_path in cfg.task.dataset_path])+'_samples_weight_val_dataloader.npy'
+            if os.path.exists(prefix):
+                print('USING SAVED SAMPLE WEIGHTS', prefix)
+                samples_weight = np.load(prefix)
+            else:
+                samples_weight=[]
+                print('calcualting sample weights')
+                with tqdm.tqdm(val_dataloader) as tepoch:
+                    for batch_idx, batch in enumerate(tepoch):
+                        samples_weight.extend(batch['success'].tolist())
+                successes_count = sum(samples_weight)
+                failures_count = len(samples_weight)-successes_count
+                weight = 1. / np.array([successes_count,failures_count])
+                samples_weight=np.array(samples_weight)
+                samples_weight[np.isclose(samples_weight, 1.0)] = weight[0]
+                samples_weight[np.isclose(samples_weight, 0.0)] = weight[1]
+                np.save(prefix, samples_weight)
+            samples_weight = torch.from_numpy(samples_weight)
+            samples_weight = samples_weight.double()
+            sampler = WeightedRandomSampler(samples_weight, len(dataset_combined), replacement=True)        
+            val_dataloader = DataLoader(val_dataset_combined, sampler=sampler, **cfg.val_dataloader)
 
-        val_dataloader = DataLoader(val_dataset, sampler=sampler, **cfg.val_dataloader)
-        print('train dataset:', len(dataset), 'train dataloader:', len(train_dataloader))
-        print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
+        print('train dataset:', len(dataset_combined), 'train dataloader:', len(train_dataloader))
+        print('val dataset:', len(val_dataset_combined), 'val dataloader:', len(val_dataloader))
 
-        class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(train_dataloader, 'train', {0: "failures", 1: "successes"})
-        class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(val_dataloader, 'validation', {0: "failures", 1: "successes"})
-        total_0 = 0
-        total_1 = 0
-        for batch in train_dataloader:   
-            total_0 += (batch['success'] == 0).sum()
-            total_1 += (batch['success'] == 1).sum()
-        print('TRAIN DATA WEIGHTED BALANCED', total_0, total_1)
-        total_0 = 0
-        total_1 = 0
-        for batch in val_dataloader:   
-            total_0 += (batch['success'] == 0).sum()
-            total_1 += (batch['success'] == 1).sum()
-        print(total_0, total_1)
-        print('VALDATON DATA WEIGHTED BALANCED', total_0, total_1)
+        # if 'balance_dataset' in cfg.task and cfg.task.balance_dataset:
+        #     class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(train_dataloader, 'train', {0: "failures", 1: "successes"})
+        #     class_0_batch_counts, class_1_batch_counts, idxs_seen = self.visualise_dataloader(val_dataloader, 'validation', {0: "failures", 1: "successes"})
+        #     total_0 = 0
+        #     total_1 = 0
+        #     print('calculating dataset stats')
+        #     for batch in tqdm.tqdm(train_dataloader):
+        #         total_0 += (batch['success'] == 0).sum()
+        #         total_1 += (batch['success'] == 1).sum()
+        #     print('TRAIN DATA WEIGHTED BALANCED', total_0, total_1)
+        #     total_0 = 0
+        #     total_1 = 0
+        #     for batch in tqdm.tqdm(val_dataloader):   
+        #         total_0 += (batch['success'] == 0).sum()
+        #         total_1 += (batch['success'] == 1).sum()
+        #     print(total_0, total_1)
+        #     print('VALDATON DATA WEIGHTED BALANCED', total_0, total_1)
 
         self.model.set_normalizer(normalizer)
 
@@ -391,34 +418,60 @@ class TrainClassifierWorkspace(BaseWorkspace):
     def run_validation(self):
         cfg = copy.deepcopy(self.cfg)
         # configure dataset
-        dataset: BaseImageDataset
-        dataset = hydra.utils.instantiate(cfg.task.dataset)
-        assert isinstance(dataset, BaseImageDataset)
-        train_dataloader = DataLoader(dataset, **cfg.dataloader)
-        normalizer = dataset.get_normalizer()
-
+        dataset_combined: BaseImageDataset
+        datasets=[]
+        for each_dataset in cfg.task.dataset_path:
+            cfg.task.dataset.dataset_path = each_dataset
+            datasets.append(hydra.utils.instantiate(cfg.task.dataset))
+        dataset_combined = ConcatDataset(datasets)
+        # assert isinstance(datasets[0], BaseImageDataset)
+        # train_dataloader = DataLoader(dataset_combined, **cfg.dataloader)
+        normalizer = datasets[0].get_multidataset_normalizer(datasets)
+        all_metric_dict={}
+        # for each_dataset in datasets:
+        # pdb.set_trace()
+        # print('RUNNING VALIDATION ON:', each_dataset.dataset_path)
         # configure validation dataset
-        val_dataset = dataset.get_validation_dataset()
-        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        # val_dataset = each_dataset.get_validation_dataset()
+        val_dataset = [dataset.get_validation_dataset() for dataset in datasets]
+        val_dataset_combined = ConcatDataset(val_dataset)
+        val_dataloader = DataLoader(val_dataset_combined, **cfg.val_dataloader)
+            
+        if 'balance_dataset' in cfg.task and cfg.task.balance_dataset:
+            assert True==False
+            prefix = '__'.join([dataset_path.split('/')[-2] for dataset_path in cfg.task.dataset_path])+'_samples_weight_val_dataloader.npy'
+            if os.path.exists(prefix):
+                print('USING SAVED SAMPLE WEIGHTS', prefix)
+                samples_weight = np.load(prefix)
+            else:
+                samples_weight=[]
+                print('Calculating sampler weights')
+                with tqdm.tqdm(val_dataloader) as tepoch:
+                    for batch_idx, batch in enumerate(tepoch):
+                        samples_weight.extend(batch['success'].tolist())
+                successes_count = sum(samples_weight)
+                failures_count = len(samples_weight)-successes_count
+                weight = 1. / np.array([successes_count,failures_count])
+                samples_weight=np.array(samples_weight)
+                samples_weight[np.isclose(samples_weight, 1.0)] = weight[0]
+                samples_weight[np.isclose(samples_weight, 0.0)] = weight[1]
+                np.save(prefix, samples_weight)
+
+            samples_weight = torch.from_numpy(samples_weight)
+            samples_weight = samples_weight.double()
+            sampler = WeightedRandomSampler(samples_weight, len(dataset_combined), replacement=True)
+            val_dataloader = DataLoader(val_dataset, sampler=sampler, **cfg.val_dataloader)
+        
         print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
-        target = []
-        for i in val_dataloader.dataset:
-            target.append(i['success'])
-        target = np.array(target)
-        class_sample_count = np.array([len(np.where(target == t)[0]) for t in np.unique(target)])
-        weight = 1. / class_sample_count
-        samples_weight = np.array([weight[int(t)] for t in target])
-        samples_weight = torch.from_numpy(samples_weight)
-        samples_weigth = samples_weight.double()
-        sampler = WeightedRandomSampler(weights=samples_weight, num_samples=len(val_dataset), replacement=True)
-        val_dataloader = DataLoader(val_dataset, sampler=sampler, **cfg.val_dataloader)
-        print('val dataset:', len(val_dataset), 'val dataloader:', len(val_dataloader))
-        total_0 = 0
-        total_1 = 0
-        for batch in val_dataloader:   
-            total_0 += (batch['success'] == 0).sum()
-            total_1 += (batch['success'] == 1).sum()
-        print('TRAIN DATA WEIGHTED BALANCED', total_0, total_1)
+        # total_0 = 0
+        # total_1 = 0
+        # pdb.set_trace()
+        # print('calculating stats', )
+        # with tqdm.tqdm(val_dataloader) as tepoch:
+        #     for batch_idx, batch in enumerate(tepoch):
+        #         total_0 += (batch['success'] == 0).sum()
+        #         total_1 += (batch['success'] == 1).sum()
+        # print('VALIDATION DATA WEIGHTED BALANCED', total_0, total_1)
 
         self.model.set_normalizer(normalizer)
 
@@ -429,7 +482,6 @@ class TrainClassifierWorkspace(BaseWorkspace):
         successes = list()
         objects = list()
         preds = list()
-
         step_log = dict()
         with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
             leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
@@ -443,8 +495,10 @@ class TrainClassifierWorkspace(BaseWorkspace):
                 equals = (batch['success'].float()  ==  actual_out.t()) + 0.0
                 preds.extend(equals.cpu().numpy())
                 valid_accuracy.append(torch.mean(equals).cpu().numpy())
-                # if 'object' in batch:
-                #     objects.extend(batch['object'])
+                if 'object' in batch:
+                    print('OBJECT IN BATCH')
+                    pdb.set_trace()
+                    objects.extend(batch['object'])
                 successes.extend(batch['success'].cpu().numpy())
 
         step_log['valid_loss'] = np.mean(valid_loss)
@@ -452,8 +506,8 @@ class TrainClassifierWorkspace(BaseWorkspace):
         step_log['equals'] = preds
         step_log['gt_successes'] = successes
         step_log['gt_objects'] = objects
-        step_log['val_dataset_stats'] = self.print_dataset_stats(val_dataset)
-        step_log['train_dataset_stats'] = self.print_dataset_stats(dataset)
+        step_log['val_dataset_stats'] = self.print_dataset_stats(val_dataset_combined)
+        step_log['train_dataset_stats'] = self.print_dataset_stats(dataset_combined)
 
         print('\tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  '.format(
             step_log['valid_loss'], step_log['valid_accuracy']))
@@ -463,19 +517,24 @@ class TrainClassifierWorkspace(BaseWorkspace):
         for key, value in step_log.items():
             new_key = key.replace('/', '_')
             metric_dict[new_key] = value
+            # all_metric_dict[each_dataset.dataset_path]=metric_dict
+        # return all_metric_dict
         return metric_dict
-    def print_dataset_stats(self, dataset):
-        total_episodes = len(dataset.train_mask)
-        epsiodes_in_dataset = dataset.train_mask.sum()
-        dataset_indices = np.where(dataset.train_mask==True)[0]
-        successful_episodes = dataset.replay_buffer.data['success'][dataset_indices].sum()
-        fail_epsidoes = epsiodes_in_dataset - successful_episodes
-        return {
-            'total_episodes': total_episodes,
-            'epsiodes_in_dataset': epsiodes_in_dataset,
-            'successful_episodes': successful_episodes,
-            'fail_epsidoes': fail_epsidoes
-        }
+    def print_dataset_stats(self, all_datasets):
+        all_data = {}
+        for dataset in all_datasets.datasets:
+            total_episodes = len(dataset.train_mask)
+            epsiodes_in_dataset = dataset.train_mask.sum()
+            dataset_indices = np.where(dataset.train_mask==True)[0]
+            successful_episodes = dataset.replay_buffer.data['success'][dataset_indices].sum()
+            fail_epsidoes = epsiodes_in_dataset - successful_episodes
+            all_data[dataset.dataset_path.split('/')[-2]]={
+                'total_episodes': total_episodes,
+                'epsiodes_in_dataset': epsiodes_in_dataset,
+                'successful_episodes': successful_episodes,
+                'fail_epsidoes': fail_epsidoes
+            }
+        return all_data
     def display_dataset(self, dataset):
         dataset_indices=np.where(dataset.train_mask==True)
         ep_starts = dataset.replay_buffer.episode_ends[dataset_indices]-dataset.replay_buffer.episode_lengths[dataset_indices]

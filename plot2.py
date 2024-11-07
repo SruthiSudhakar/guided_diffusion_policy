@@ -56,47 +56,10 @@ epoch=epoch[1:]
 fig, ax = plt.subplots()
 plt.subplots_adjust(left=0.2)
 
-line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
-line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
-line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
+line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
+line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
 plt.legend()
 
 plt.show()
 
-plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display
-
-fig, ax = plt.subplots()
-plt.subplots_adjust(left=0.2)
-
-line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
-line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
-line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
-line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
-line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
-plt.legend()
-
-check_ax = plt.axes([0.05, 0.4, 0.1, 0.15])
-check = CheckButtons(check_ax, ['Test Mean Score', 'Test Mean Loss'], [True, True])
-
-# Function to toggle visibility
-def toggle_visibility(label):
-    if label == 'Test Mean Score':
-        line1.set_visible(not line1.get_visible())
-    elif label == 'Test Mean Loss':
-        line2.set_visible(not line2.get_visible())
-    if label == 'train_loss':
-        line3.set_visible(not line3.get_visible())
-    elif label == 'train_guidance_grad_scaled':
-        line4.set_visible(not line4.get_visible())
-    if label == 'train_mse_losses':
-        line5.set_visible(not line5.get_visible())
-    elif label == 'val_score':
-        line6.set_visible(not line6.get_visible())
-    if label == 'train_score':
-        line7.set_visible(not line7.get_visible())
-    plt.draw()
-
-
-check.on_clicked(toggle_visibility)
-
-mpld3.save_html(fig, '/'.join(filename.split('/')[:-1])+'/trainloss_epoch.html')
+plt.savefig('/'.join(filename.split('/')[:-1])+'/train_terms_epoch.png')  # display

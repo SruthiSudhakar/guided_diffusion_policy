@@ -18,12 +18,40 @@ python train.py \
     training.device=3 \
     dataloader.batch_size=1024 \
     val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier_combined2seed6000' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
-    training.checkpoint_every=1 \
-    +task.env_runner.object=needle
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_4wredcubeseed6000' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5 \
+    training.checkpoint_every=1 
 
+python 
+accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=5 --main_process_port=8084 train.py \
+    --config-dir=. \
+    --config-name=image_square_ph_classifier.yaml \
+    training.seed=42 \
+    training.device=4 \
+    dataloader.batch_size=1024 \
+    val_dataloader.batch_size=1024 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_4wredcubeseed6000' \
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5\"]" \
+    task.balance_dataset=false \
+    training.checkpoint_every=1 
+
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugred2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5\"]" \
+
+accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=6 --main_process_port=8094 train.py \
+    --config-dir=. \
+    --config-name=image_square_ph_classifier.yaml \
+    training.seed=42 \
+    training.device=4 \
+    dataloader.batch_size=1024 \
+    val_dataloader.batch_size=1024 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_redgreen2seed6000' \
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\"]" \
+    task.balance_dataset=false \
+    training.checkpoint_every=1 
+
+    optimizer.lr=0.00001 \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/combined2_seed6000/data_all.hdf5 \
 
 accelerate launch --multi_gpu --num_machines 1 --num_processes=1 --gpu_ids=1 --main_process_port=8080 train.py \
     --config-dir=. \
@@ -32,7 +60,8 @@ accelerate launch --multi_gpu --num_machines 1 --num_processes=1 --gpu_ids=1 --m
     training.device=2 \
     dataloader.batch_size=2048 \
     val_dataloader.batch_size=2048 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_classifier_hammer_needle_greencube_mugbeige' \
+    task.balance=false \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_classifier_hammer_needle_greencube_mugbeige' \
     task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer_needle_greencube_mugbeige/combined.hdf5 \
     task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer_needle_greencube_mugbeige/combined.hdf5 \
     training.checkpoint_every=10 \

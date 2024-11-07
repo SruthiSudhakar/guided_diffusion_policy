@@ -7,9 +7,14 @@ cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.10.31/13.19.05_train_classifier_classifier_needle2seed6000/checkpoints/epoch=0002-valid_accuracy=0.743 \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/11.05.16.26.44_train_classifier_6objsseed6000/checkpoints/epoch=0150-valid_accuracy=0.860 \
+                --dataset_path "[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugred2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5\"]" \
                 --device cuda:5
+
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.16.36.57_train_classifier_4wredcubeseed6000/checkpoints/epoch=0200-valid_accuracy=0.901 \
+                --dataset_path "[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5\"]" \
+                --device cuda:7 \
+                --balance_dataset false
 
 """
 
@@ -32,13 +37,15 @@ from omegaconf import OmegaConf,open_dict
 import datetime
 from diffusion_policy.common.pytorch_util import dict_apply, optimizer_to
 import numpy as np
-
+import ast
 
 @click.command()
 @click.option('-c', '--checkpoint', required=True)
 @click.option('-dataset_path', '--dataset_path', required=False)
 @click.option('-d', '--device', default='cuda:0')
-def main(checkpoint, dataset_path, device):
+@click.option('-bs', '--bs', default=1024)
+@click.option('-balance_dataset', '--balance_dataset')
+def main(checkpoint, dataset_path, device, bs, balance_dataset=None):
     current_time = datetime.datetime.now()
     output_dir=checkpoint+f'/classify_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
     print('output_dir: ',output_dir)
@@ -54,9 +61,14 @@ def main(checkpoint, dataset_path, device):
     # load checkpoint
     payload = torch.load(open(checkpoint+'.ckpt', 'rb'), pickle_module=dill)
     cfg = payload['cfg']
-
-    cfg['task']['dataset_path'] = dataset_path
-    cfg['task']['dataset']['dataset_path'] = dataset_path
+    cfg['task']['dataset_path'] = ast.literal_eval(dataset_path)
+    cfg['task']['dataset']['dataset_path'] = ast.literal_eval(dataset_path)[0]
+    cfg['val_dataloader']['batch_size'] = bs
+    if balance_dataset:
+        if balance_dataset=='true':
+            cfg['task']['balance_dataset']=True
+        else:
+            cfg['task']['balance_dataset']=False
     cls = hydra.utils.get_class(cfg._target_)
     workspace = cls(cfg, output_dir=output_dir)
     workspace: BaseWorkspace
@@ -87,6 +99,7 @@ def main(checkpoint, dataset_path, device):
     json_log['precision'] = precision
 
     if len(stats['gt_objects']) > 0:
+        pdb.set_trace()
         for gt_object in stats['gt_objects']:
             acc_per_class[gt_object] = []
         for idx in len(range(stats['equals'])):

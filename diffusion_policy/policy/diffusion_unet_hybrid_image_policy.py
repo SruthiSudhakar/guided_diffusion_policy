@@ -219,7 +219,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                     guidance_scale = 10 ** nearest_power
 
                 guidance_scale=float(guidance_scale)
-
+                pdb.set_trace()
                 model_output += guidance_scale * guidance_gradient
 
             # 3. compute previous image: x_t -> x_t-1
@@ -382,20 +382,23 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
 
             labels=torch.ones(pred_trajectory.shape[0])[:,np.newaxis]
             device = noisy_trajectory.device
-            guidance_gradient = classifier_policy.compute_classifier_gradient( pred_trajectory.to(device),  global_cond=global_cond, timesteps=torch.zeros(labels.shape[0]).to(device), label=labels.to(device))
-            guidance_gradient = torch.abs(guidance_gradient)
-            
-            successes = batch['success']
-            loss[successes==0]= 0
+            # guidance_gradient = classifier_policy.compute_classifier_gradient( pred_trajectory.to(device),  global_cond=global_cond, timesteps=torch.zeros(labels.shape[0]).to(device), label=labels.to(device))
+            # guidance_gradient = torch.abs(guidance_gradient)
+            # guidance_gradient = torch.abs(guidance_gradient)
+            # pdb.set_trace()
+            classifier_loss = classifier_policy.compute_loss(batch)
+            classifier_loss = torch.log(torch.sigmoid(classifier_loss))
+            # successes = batch['success']
+            # loss[successes==0]= 0
 
             # guidance_scale = (1/10) * (loss.mean() / guidance_gradient.mean())
             # #round_to_nearest_power_of_10
             # log10_guidance_scale = math.log10(guidance_scale)
             # nearest_power = round(log10_guidance_scale)
             # guidance_scale = 10 ** nearest_power
-
             # print('loss', loss.mean(), 'guidance_gradient', guidance_gradient.mean(),'guidance_scale',guidance_scale,'guidance_gradient*guidance_scale',guidance_gradient.mean()*guidance_scale)
-            loss += guidance_scale * guidance_gradient
+            
+            # loss += guidance_scale * guidance_gradient
             
         loss = reduce(loss, 'b ... -> b (...)', 'mean')
 
@@ -408,5 +411,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
 
         loss = loss.mean()
         if classifier_policy:
-            return loss, mse_loss.mean(), (guidance_scale * guidance_gradient).mean()
+            loss -= classifier_loss * guidance_scale
+            # return loss, mse_loss.mean(), (guidance_scale * guidance_gradient).mean()
+            return loss, mse_loss.mean(), classifier_loss * guidance_scale
         return loss

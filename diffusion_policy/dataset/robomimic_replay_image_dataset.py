@@ -126,6 +126,7 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             # collected_demos=collected_demos)
         
         # self.collected_demos = collected_demos
+        self.dataset_path = dataset_path
         self.replay_buffer = replay_buffer
         self.sampler = sampler
         self.shape_meta = shape_meta
@@ -191,6 +192,46 @@ class RobomimicReplayImageDataset(BaseImageDataset):
             normalizer[key] = get_image_range_normalizer()
         return normalizer
 
+    def get_multidataset_normalizer(self, dataset_list, **kwargs) -> LinearNormalizer:
+        normalizer = LinearNormalizer()
+
+        # action
+        stat = array_to_stats(np.concatenate([dataset.replay_buffer['action'] for dataset in dataset_list]))#self.replay_buffer['action'])
+        if self.abs_action:
+            if stat['mean'].shape[-1] > 10:
+                # dual arm
+                this_normalizer = robomimic_abs_action_only_dual_arm_normalizer_from_stat(stat)
+            else:
+                this_normalizer = robomimic_abs_action_only_normalizer_from_stat(stat)
+            
+            if self.use_legacy_normalizer:
+                this_normalizer = normalizer_from_stat(stat)
+        else:
+            # already normalized
+            this_normalizer = get_identity_normalizer_from_stat(stat)
+        normalizer['action'] = this_normalizer
+
+        # obs
+        for key in self.lowdim_keys:
+            stat = array_to_stats(np.concatenate([dataset.replay_buffer[key] for dataset in dataset_list]))#self.replay_buffer['action'])
+
+            if key.endswith('pos'):
+                this_normalizer = get_range_normalizer_from_stat(stat)
+            elif key.endswith('quat'):
+                # quaternion is in [-1,1] already
+                this_normalizer = get_identity_normalizer_from_stat(stat)
+            elif key.endswith('qpos'):
+                this_normalizer = get_range_normalizer_from_stat(stat)
+            else:
+                raise RuntimeError('unsupported')
+            normalizer[key] = this_normalizer
+
+        # image
+        for key in self.rgb_keys:
+            normalizer[key] = get_image_range_normalizer()
+        return normalizer
+
+
     def get_all_actions(self) -> torch.Tensor:
         return torch.from_numpy(self.replay_buffer['action'])
 
@@ -226,8 +267,8 @@ class RobomimicReplayImageDataset(BaseImageDataset):
         }            
         if 'success' in data:
             torch_data['success'] = torch.from_numpy(data['success'].astype(np.float32))
-        # if 'object' in data:
-        #     torch_data['object'] = torch.from_numpy(data['object'].astype(np.float32))
+        if 'object' in data:
+            torch_data['object'] = data['object']
         return torch_data
 
 
@@ -297,8 +338,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         # save lowdim data
         if 'success' in demos[f'demo_0'].keys():
             add_ons_list = ['success']
-        # if 'object' in demos[f'demo_0'].keys():
-        #     add_ons_list = ['success', 'object']
+        if 'object' in demos[f'demo_0'].keys():
+            add_ons_list = ['success', 'object']
         for key in tqdm(lowdim_keys + add_ons_list + ['action'], desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':
@@ -311,8 +352,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             for i in range(len(demos)):
                 demo = demos[f'demo_{i}']
                 if key=='object':
-                    object_name = int.from_bytes(demo[data_key].asstr()[()].encode('utf-8'), 'little')
-                    this_data.append([object_name])
+                    this_data.append([demo[data_key].asstr()[()]])
                 else:
                     try:
                         this_data.append(demo[data_key][:].astype(np.float32))
@@ -336,7 +376,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['obs'][key]['shape'])
             
             if key=='object':
-                this_data=this_data.astype(np.float32)
+                this_data=this_data
             _ = data_group.array(
                 name=key,
                 data=this_data,

@@ -18,7 +18,7 @@ fuse.cfg
 *.png
 *.pdf
 *.txt
-
+*.npy
 # Generation results
 results/
 
