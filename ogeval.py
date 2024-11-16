@@ -7,52 +7,43 @@ cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
 Usage:
-
 python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/4wredcube/ \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/4wredcube/s \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:4 \
+                --device cuda:7 \
                 --object 4wredcube \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0004_valid_accuracy=0.905 \
-                --guidance_scale 3 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0053_valid_accuracy_0.957 \
+                --guidance_scale 9.5 \
                 --guided_towards 1 
                 \
                 --save
-
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/18.03.45_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0500-test_mean_score=0.880.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/18.03.45_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0500-test_mean_score=0.880/ \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.14/13.11.21_train_diffusion_unet_hybrid_15.00.33_hammer_guidance_added_alldata/checkpoints/epoch=0100-test_mean_score=0.940.ckpt \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.14/13.11.21_train_diffusion_unet_hybrid_15.00.33_hammer_guidance_added_alldata/checkpoints/epoch=0100-test_mean_score=0.940/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:2 \
+                --device cuda:7 \
                 --object hammer \
                 --n_train 50 \
                 --n_test 950 \
-                --test_start_seed 4000
+                --test_start_seed 4000 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0004_valid_accuracy_0.905 \
+                --guidance_scale 3 \
+                --guided_towards 1 
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/17.49.53_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0900-test_mean_score=0.960.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/17.49.53_train_diffusion_unet_hybrid_15.00.33_hammer_withclasfloss_dataall_subset/checkpoints/epoch=0900-test_mean_score=0.960/ \
+python ogeval.py --checkpoint  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.15/10.23.30_train_diffusion_unet_hybrid_4wredcube_finetune_successful_only/checkpoints/epoch=0000-test_mean_score=0.400.ckpt \
+                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.15/10.23.30_train_diffusion_unet_hybrid_4wredcube_finetune_successful_only/checkpoints/epoch=0000-test_mean_score=0.400/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
-                --device cuda:4 \
-                --object hammer \
+                --device cuda:7 \
+                --object 4wredcube \
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 
-                \
-                --save 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/16.40.19_train_diffusion_unet_hybrid_15.00.33_hammer_successful/checkpoints/epoch=0200-test_mean_score=0.840.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/16.40.19_train_diffusion_unet_hybrid_15.00.33_hammer_successful/checkpoints/epoch=0200-test_mean_score=0.840/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
-                --max_steps 100 \
-                --device cuda:1 \
-                --object hammer \
-                --n_train 50 \
-                --n_test 100 \
-                --test_start_seed 4000                     
+                
 """
 
 import sys

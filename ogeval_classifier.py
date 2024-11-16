@@ -7,11 +7,11 @@ cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
 Usage:
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/11.05.16.26.44_train_classifier_6objsseed6000/checkpoints/epoch=0150-valid_accuracy=0.860 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.05/11.05.16.26.44_train_classifier_6objsseed6000/checkpoints/epoch=0600-valid_accuracy=0.841 \
                 --dataset_path "[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugred2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5\"]" \
                 --device cuda:5
 
-python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.16.36.57_train_classifier_4wredcubeseed6000/checkpoints/epoch=0200-valid_accuracy=0.901 \
+python ogeval_classifier.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0053_valid_accuracy_0.957 \
                 --dataset_path "[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5\"]" \
                 --device cuda:7 \
                 --balance_dataset false

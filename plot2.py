@@ -56,7 +56,7 @@ epoch=epoch[1:]
 fig, ax = plt.subplots()
 plt.subplots_adjust(left=0.2)
 
-line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
+line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_scaled")   # Plot the chart
 line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
 plt.legend()
 

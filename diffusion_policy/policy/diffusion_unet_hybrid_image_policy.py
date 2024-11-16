@@ -219,7 +219,6 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                     guidance_scale = 10 ** nearest_power
 
                 guidance_scale=float(guidance_scale)
-                pdb.set_trace()
                 model_output += guidance_scale * guidance_gradient
 
             # 3. compute previous image: x_t -> x_t-1
@@ -373,6 +372,8 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
 
         mse_loss = F.mse_loss(pred, target, reduction='none')
         loss = mse_loss * loss_mask.type(mse_loss.dtype)
+        loss = reduce(loss, 'b ... -> b (...)', 'mean')
+        loss = reduce(loss, 'b ... -> b', 'mean')
 
         if classifier_policy:
             '''if its a negative sample, only use the classifier loss, if its a positive sample, use both classifier and mse loss'''
@@ -380,16 +381,18 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             for idx in range(len(timesteps)):
                 pred_trajectory[idx] = self.noise_scheduler.step(pred[idx:idx+1], timesteps[idx], noisy_trajectory[idx:idx+1]).prev_sample
 
-            labels=torch.ones(pred_trajectory.shape[0])[:,np.newaxis]
+            # labels=torch.ones(pred_trajectory.shape[0])[:,np.newaxis]
             device = noisy_trajectory.device
             # guidance_gradient = classifier_policy.compute_classifier_gradient( pred_trajectory.to(device),  global_cond=global_cond, timesteps=torch.zeros(labels.shape[0]).to(device), label=labels.to(device))
             # guidance_gradient = torch.abs(guidance_gradient)
             # guidance_gradient = torch.abs(guidance_gradient)
-            # pdb.set_trace()
-            classifier_loss = classifier_policy.compute_loss(batch)
-            classifier_loss = torch.log(torch.sigmoid(classifier_loss))
-            # successes = batch['success']
-            # loss[successes==0]= 0
+            # classifier_loss = classifier_policy.compute_loss(batch)
+            classifier_output = classifier_policy.model(pred_trajectory.to(device), timestep=torch.zeros(pred_trajectory.shape[0]).to(device), local_cond=local_cond, global_cond=global_cond)
+            classifier_probs = torch.sigmoid(classifier_output)
+            assert (classifier_probs>1).sum()==0 and (classifier_probs<0).sum()==0
+            classifier_log_probs = torch.log(classifier_probs)[:,0]
+            successes = batch['success']
+            loss[successes==0]= 0
 
             # guidance_scale = (1/10) * (loss.mean() / guidance_gradient.mean())
             # #round_to_nearest_power_of_10
@@ -397,12 +400,11 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             # nearest_power = round(log10_guidance_scale)
             # guidance_scale = 10 ** nearest_power
             # print('loss', loss.mean(), 'guidance_gradient', guidance_gradient.mean(),'guidance_scale',guidance_scale,'guidance_gradient*guidance_scale',guidance_gradient.mean()*guidance_scale)
-            
             # loss += guidance_scale * guidance_gradient
-            
-        loss = reduce(loss, 'b ... -> b (...)', 'mean')
+            loss +=-classifier_log_probs * guidance_scale
 
         if self.negate_failure_losses != 0:
+            assert False==True
             '''NEGATE THE LOSS if ITS A FAILED EXECUTION'''
             pdb.set_trace()
             successes = batch['success']
@@ -411,7 +413,6 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
 
         loss = loss.mean()
         if classifier_policy:
-            loss -= classifier_loss * guidance_scale
             # return loss, mse_loss.mean(), (guidance_scale * guidance_gradient).mean()
-            return loss, mse_loss.mean(), classifier_loss * guidance_scale
+            return loss, mse_loss.mean(), classifier_log_probs.mean() * guidance_scale
         return loss
