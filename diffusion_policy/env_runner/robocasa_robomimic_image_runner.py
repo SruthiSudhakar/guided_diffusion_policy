@@ -14,7 +14,6 @@ from diffusion_policy.gym_util.sync_vector_env import SyncVectorEnv
 from diffusion_policy.gym_util.multistep_wrapper import MultiStepWrapper
 from diffusion_policy.gym_util.video_recording_wrapper import VideoRecordingWrapper, VideoRecorder
 from diffusion_policy.model.common.rotation_transformer import RotationTransformer
-from diffusion_policy.common.sampler import SequenceSampler, get_val_mask
 
 from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.common.pytorch_util import dict_apply
@@ -24,14 +23,14 @@ import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
 from lovely_numpy import lo
-import pdb
+import pdb, json
+from termcolor import colored
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
         modality_mapping[attr.get('type', 'low_dim')].append(key)
     ObsUtils.initialize_obs_modality_mapping_from_dict(modality_mapping)
-
     env = EnvUtils.create_env_from_metadata(
         env_meta=env_meta,
         render=False, 
@@ -42,7 +41,7 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     return env
 
 
-class RobomimicImageRunnerEval(BaseImageRunner):
+class RobocasaRobomimicImageRunner(BaseImageRunner):
     """
     Robomimic envs already enforces number of steps.
     """
@@ -51,11 +50,11 @@ class RobomimicImageRunnerEval(BaseImageRunner):
             output_dir,
             dataset_path,
             shape_meta:dict,
-            n_train=0,
-            n_train_vis=0,
+            n_train=10,
+            n_train_vis=3,
             train_start_idx=0,
-            n_test=0,
-            n_test_vis=0,
+            n_test=22,
+            n_test_vis=6,
             test_start_seed=10000,
             max_steps=400,
             n_obs_steps=2,
@@ -67,8 +66,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
             abs_action=False,
             tqdm_interval_sec=5.0,
             n_envs=None,
-            object=None,
-            save_stuff=False,
+            object=None
         ):
         super().__init__(output_dir)
         self.object = object
@@ -109,6 +107,8 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
+                        env_model=None,
+                        ep_meta=None,
                         render_obs_key=render_obs_key
                     ),
                     video_recoder=VideoRecorder.create_h264(
@@ -144,6 +144,8 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
+                        env_model=None,
+                        ep_meta=None,
                         render_obs_key=render_obs_key
                     ),
                     video_recoder=VideoRecorder.create_h264(
@@ -171,10 +173,12 @@ class RobomimicImageRunnerEval(BaseImageRunner):
         with h5py.File(dataset_path, 'r') as f:
             for i in range(n_train):
                 train_idx = train_start_idx + i
-                enable_render = True
+                enable_render = i < n_train_vis
                 init_state = f[f'data/demo_{train_idx}/states'][0]
+                env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
+                ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
 
-                def init_fn(env, init_state=init_state, 
+                def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
                     # setup rendering
                     # video_wrapper
@@ -183,7 +187,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                     env.env.file_path = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
-                            'trainmedia', str(train_idx) + ".mp4")
+                            'trainmedia', wv.util.generate_id() + ".mp4")
                         filename.parent.mkdir(parents=False, exist_ok=True)
                         filename = str(filename)
                         env.env.file_path = filename
@@ -191,7 +195,11 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                     # switch to init_state reset
                     assert isinstance(env.env.env, RobomimicImageWrapper)
                     env.env.env.init_state = init_state
-
+                    env.env.env.env_model = env_model
+                    env.env.env.ep_meta = ep_meta
+                    env.env.env.env.env.hard_reset=True
+                    env.env.env.reset()
+                    env.env.env.env.env.hard_reset=False
                 env_seeds.append(train_idx)
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
@@ -199,7 +207,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
         # test
         for i in range(n_test):
             seed = test_start_seed + i
-            enable_render = True
+            enable_render = i < n_test_vis
 
             def init_fn(env, seed=seed, 
                 enable_render=enable_render):
@@ -210,7 +218,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 env.env.file_path = None
                 if enable_render:
                     filename = pathlib.Path(output_dir).joinpath(
-                        'testmedia', str(i) + ".mp4")
+                        'testmedia', wv.util.generate_id() + ".mp4")
                     filename.parent.mkdir(parents=False, exist_ok=True)
                     filename = str(filename)
                     env.env.file_path = filename
@@ -225,7 +233,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
             env_init_fn_dills.append(dill.dumps(init_fn))
 
         env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
-
         # env = SyncVectorEnv(env_fns)
 
 
@@ -244,10 +251,8 @@ class RobomimicImageRunnerEval(BaseImageRunner):
         self.rotation_transformer = rotation_transformer
         self.abs_action = abs_action
         self.tqdm_interval_sec = tqdm_interval_sec
-        self.output_dir = output_dir
-        self.save_stuff = save_stuff
 
-    def run(self, policy: BaseImagePolicy, classifier=None, guidance_scale=None, guided_towards=None):
+    def run(self, policy: BaseImagePolicy):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -256,7 +261,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
         n_envs = len(self.env_fns) #how many to run asynchronusly at once
         n_inits = len(self.env_init_fn_dills) #how many examples to run total
         n_chunks = math.ceil(n_inits / n_envs) #total/per run = how many times to run it
-        # print('N STUFF', n_envs, n_inits, n_chunks)
 
         # allocate data
         all_video_paths = [None] * n_inits
@@ -281,8 +285,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
 
             # start rollout
             obs = env.reset()
-            added_state = env.call('get_reset_states')
-
             past_action = None
             policy.reset()
 
@@ -291,7 +293,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 leave=False, mininterval=self.tqdm_interval_sec)
             
             done = False
-            env_step_index = 0
             while not done:
                 # create obs dict
                 np_obs_dict = dict(obs)
@@ -309,84 +310,33 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 with torch.no_grad():
                     new_obs_dict = {}
                     for k,v in obs_dict.items():
-                        new_obs_dict[k]=v#v[:,-2:]
-                    if classifier:
-                        action_dict = policy.predict_action(new_obs_dict, classifier, guidance_scale, guided_towards)
-                    else:
-                        action_dict = policy.predict_action(new_obs_dict)
+                        new_obs_dict[k]=v[:,-2:]
+                    action_dict = policy.predict_action(new_obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
                     lambda x: x.detach().to('cpu').numpy())
 
-                #np.all(np_action_dict['action_pred'][:,1:9,:]==np_action_dict['action'])
                 action = np_action_dict['action']
-
                 if not np.all(np.isfinite(action)):
+                    print(action)
                     raise RuntimeError("Nan or Inf action")
-
+                
                 # step env
                 env_action = action
                 if self.abs_action:
                     env_action = self.undo_transform_action(action)
 
-                full_action = env_action#self.undo_transform_action(np_action_dict['action_pred'])
-
-                # print('INDEX:', env_step_index)
-                # if chunk_idx == n_chunks - 1:
-                #     pdb.set_trace()
-                # actionpath = np.load('/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.06.05/15.00.33_train_diffusion_unet_hybrid_liftph/checkpoints/epoch=0150-test_mean_score=0.980/1000galift_hammer_8_16_53_6/actions.npy', allow_pickle=True)
-                # env_action = actionpath[env_step_index,this_global_slice,:,:]
+                add_on = np.tile([0., -0.,  0.,  0., -1.], (env_action.shape[0], env_action.shape[1], 1))
+                extended_env_action = np.concatenate((env_action, add_on), axis=-1)
+                obs, reward, done, info = env.step(extended_env_action)
                 
-                obs, reward, done, info = env.step(env_action)
-                # env_step_index+=1
-                if self.save_stuff:
-                    print('MORE SAVING STUFF')
-                    if 'save_rollout_obsdict_agentview_images' not in locals():
-                        save_rollout_obsdict_agentview_images = np.expand_dims(np_obs_dict['agentview_image'],0)
-                        save_rollout_obsdict_eyeinhand_images = np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)
-                        save_rollout_obsdict_robot0s = np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)
-                        save_rollout_actions = np.expand_dims(full_action,0)
-                    else:
-                        save_rollout_obsdict_agentview_images = np.vstack((save_rollout_obsdict_agentview_images,np.expand_dims(np_obs_dict['agentview_image'],0)))
-                        save_rollout_obsdict_eyeinhand_images = np.vstack((save_rollout_obsdict_eyeinhand_images,np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)))
-                        save_rollout_obsdict_robot0s = np.vstack((save_rollout_obsdict_robot0s,np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)))
-                        save_rollout_actions = np.vstack((save_rollout_actions,np.expand_dims(full_action,0)))
-
                 done = np.all(done)
                 past_action = action
 
                 # update pbar
-                pbar.update(full_action.shape[1])
+                pbar.update(action.shape[1])
             pbar.close()
-
-            if self.save_stuff:
-                print('MORE SAVING STUFF')
-                if 'all_save_rollout_obsdict_agentview_images' not in locals():
-                    all_save_rollout_obsdict_agentview_images = np.array(save_rollout_obsdict_agentview_images)
-                    all_save_rollout_obsdict_eyeinhand_images = np.array(save_rollout_obsdict_eyeinhand_images)
-                    all_save_rollout_obsdict_robot0s = np.array(save_rollout_obsdict_robot0s)
-                    all_save_rollout_actions = np.array(save_rollout_actions)
-                    all_save_grasping = np.array(env.call('is_grasping')) 
-                    all_save_reward = np.array(env.call('get_rewards'))
-                else:
-                    all_save_rollout_obsdict_agentview_images = np.concatenate((all_save_rollout_obsdict_agentview_images, np.array(save_rollout_obsdict_agentview_images)), axis=1)
-                    all_save_rollout_obsdict_eyeinhand_images = np.concatenate((all_save_rollout_obsdict_eyeinhand_images, np.array(save_rollout_obsdict_eyeinhand_images)), axis=1)
-                    all_save_rollout_obsdict_robot0s = np.concatenate((all_save_rollout_obsdict_robot0s, np.array(save_rollout_obsdict_robot0s)), axis=1)
-                    all_save_rollout_actions = np.concatenate((all_save_rollout_actions, np.array(save_rollout_actions)), axis=1)
-                    all_save_grasping = np.concatenate((all_save_grasping, np.array(env.call('is_grasping'))), axis=0)
-                    all_save_reward = np.concatenate((all_save_reward, np.array(env.call('get_rewards'))), axis=0)
-                if 'all_added_states' in locals():
-                    all_added_states = np.vstack((all_added_states, np.array(added_state)))
-                elif 'added_state' in locals():
-                    all_added_states = np.array(added_state)
-                del save_rollout_obsdict_agentview_images
-                del save_rollout_obsdict_eyeinhand_images
-                del save_rollout_obsdict_robot0s
-                del save_rollout_actions
-                if 'added_state' in locals():
-                    del added_state
-
 
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
@@ -423,17 +373,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
             name = prefix+'mean_score'
             value = np.mean(value)
             log_data[name] = value
-
-        if self.save_stuff:
-            print('MORE SAVING STUFF')
-            np.save(self.output_dir+'/obsdict_agentview.npy', all_save_rollout_obsdict_agentview_images)
-            np.save(self.output_dir+'/obsdict_eyeinhand.npy', all_save_rollout_obsdict_eyeinhand_images)
-            np.save(self.output_dir+'/obsdict_robot0s.npy', all_save_rollout_obsdict_robot0s)
-            np.save(self.output_dir+'/actions.npy', all_save_rollout_actions)
-            np.save(self.output_dir+'/rewards.npy', all_save_reward)
-            np.save(self.output_dir+'/grasping.npy', all_save_grasping)
-            if 'all_added_states' in locals():
-                np.save(self.output_dir+'/startstates.npy', all_added_states)
 
         return log_data
 

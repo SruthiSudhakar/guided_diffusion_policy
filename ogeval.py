@@ -8,34 +8,7 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/4wredcube/s \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
-                --max_steps 100 \
-                --device cuda:7 \
-                --object 4wredcube \
-                --n_train 50 \
-                --n_test 950 \
-                --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0053_valid_accuracy_0.957 \
-                --guidance_scale 9.5 \
-                --guided_towards 1 
-                \
-                --save
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.14/13.11.21_train_diffusion_unet_hybrid_15.00.33_hammer_guidance_added_alldata/checkpoints/epoch=0100-test_mean_score=0.940.ckpt \
-                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.14/13.11.21_train_diffusion_unet_hybrid_15.00.33_hammer_guidance_added_alldata/checkpoints/epoch=0100-test_mean_score=0.940/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
-                --max_steps 100 \
-                --device cuda:7 \
-                --object hammer \
-                --n_train 50 \
-                --n_test 950 \
-                --test_start_seed 4000 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0004_valid_accuracy_0.905 \
-                --guidance_scale 3 \
-                --guided_towards 1 
-
-python ogeval.py --checkpoint  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.15/10.23.30_train_diffusion_unet_hybrid_4wredcube_finetune_successful_only/checkpoints/epoch=0000-test_mean_score=0.400.ckpt \
-                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.15/10.23.30_train_diffusion_unet_hybrid_4wredcube_finetune_successful_only/checkpoints/epoch=0000-test_mean_score=0.400/ \
+                --output_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.09.03/21.23.37_train_diffusion_unet_hybrid_15.00.33_check/checkpoints/epoch=0150-test_mean_score=0.940/4wredcube/ \
                 --dataset_path /proj/vondrick3/sruthi/robots/diffusion_policy/data/robomimic/datasets/lift/ph/image_abs.hdf5 \
                 --max_steps 100 \
                 --device cuda:7 \
@@ -43,7 +16,30 @@ python ogeval.py --checkpoint  /proj/vondrick3/sruthi/robots/diffusion_policy/da
                 --n_train 50 \
                 --n_test 950 \
                 --test_start_seed 4000 
-                
+                \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.06/11.06.17.18.52_train_classifier_4wredcubeseed6000/checkpoints/epoch_0053_valid_accuracy_0.957 \
+                --guidance_scale 9.5 \
+                --guided_towards 1 \
+                --save
+
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=1000-test_mean_score=0.000.ckpt \
+                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=1000-test_mean_score=0.000/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5 \
+                --max_steps 500 \
+                --device cuda:0 \
+                --n_train 50 \
+                --n_test 50 \
+                --robocasa
+
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.51.31_train_diffusion_unet_hybrid_robocasa_closedrawer/checkpoints/epoch=1000-test_mean_score=0.000.ckpt \
+                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.51.31_train_diffusion_unet_hybrid_robocasa_closedrawer/checkpoints/epoch=1000-test_mean_score=0.000/ \
+                --dataset_path /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams.hdf5 \
+                --max_steps 300 \
+                --device cuda:1 \
+                --n_train 50 \
+                --n_test 50 \
+                --robocasa
+
 """
 
 import sys
@@ -75,11 +71,13 @@ import datetime
 @click.option('-max_steps', '--max_steps', default=500)
 @click.option('-n_train', '--n_train', required=True)
 @click.option('-n_test', '--n_test', required=True)
+@click.option('-n_envs', '--n_envs', default=28)
 @click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default=None)
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
-def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, save, test_start_seed):
+@click.option('-robocasa', '--robocasa', is_flag=True)
+def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, n_envs, save, test_start_seed, robocasa):
     current_time = datetime.datetime.now()
     if classifier_dir:
         output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
@@ -98,7 +96,12 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
     payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
     cfg = payload['cfg']
        
-    cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
+    if robocasa:
+        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
+        cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
+    else:
+        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
+    
     with open_dict(cfg):
         cfg['task']['env_runner']['object'] = object
         cfg['task']['env_runner']['save_stuff'] = save
@@ -111,7 +114,7 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
     cfg['task']['env_runner']['n_train_vis'] = int(n_train)
     cfg['task']['env_runner']['n_test'] = int(n_test)
     cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-    cfg['task']['env_runner']['n_envs'] = 28
+    cfg['task']['env_runner']['n_envs'] = int(n_envs)
     if test_start_seed:
         cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
 
@@ -165,7 +168,7 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
         if isinstance(value, wandb.sdk.data_types.video.Video):
             json_log[key] = value._path
         else:
-            json_log[key] = value
+            json_log[key] = str(value)
     out_path = os.path.join(output_dir, 'eval_log.json')
     json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
 

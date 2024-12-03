@@ -34,7 +34,7 @@ import math
 import pdb
 register_codecs()
 
-class RobomimicReplayImageDataset(BaseImageDataset):
+class RobocasaReplayImageDataset(BaseImageDataset):
     def __init__(self,
             shape_meta: dict,
             dataset_path: str,
@@ -283,10 +283,11 @@ def _convert_actions(raw_actions, abs_action, rotation_transformer):
 
         pos = raw_actions[...,:3]
         rot = raw_actions[...,3:6]
-        gripper = raw_actions[...,6:]
+        gripper = raw_actions[...,6:7]
+
         rot = rotation_transformer.forward(rot)
         raw_actions = np.concatenate([
-            pos, rot, gripper
+            pos, rot, gripper#,raw_actions[...,7:] 
         ], axis=-1).astype(np.float32)
     
         if is_dual_arm:
@@ -324,7 +325,11 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         demos = file['data']
         episode_ends = list()
         prev_end = 0
-        for i in range(len(demos)):
+        if 'demo_0' in demos:
+            start_from=0
+        else:
+            start_from=1
+        for i in range(start_from,len(demos)+start_from):
             demo = demos[f'demo_{i}']
             episode_length = demo['actions'].shape[0]
             episode_end = prev_end + episode_length
@@ -335,11 +340,11 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         _ = meta_group.array('episode_ends', episode_ends, 
             dtype=np.int64, compressor=None, overwrite=True)
 
-        add_ons_list=[]
+        add_ons_list = []
         # save lowdim data
-        if 'success' in demos[f'demo_0'].keys():
+        if 'success' in demos[f'demo_1'].keys():
             add_ons_list = ['success']
-        if 'object' in demos[f'demo_0'].keys():
+        if 'object' in demos[f'demo_1'].keys():
             add_ons_list = ['success', 'object']
         for key in tqdm(lowdim_keys + add_ons_list + ['action'], desc="Loading lowdim data"):
             data_key = 'obs/' + key
@@ -350,7 +355,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             if key == 'object':
                 data_key = 'object'
             this_data = list()
-            for i in range(len(demos)):
+            for i in range(start_from,len(demos)+start_from):
                 demo = demos[f'demo_{i}']
                 if key=='object':
                     this_data.append([demo[data_key].asstr()[()]])
@@ -394,6 +399,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 _ = zarr_arr[zarr_idx]
                 return True
             except Exception as e:
+                print('WHYYYYY WHATS WRONG   ', e)
+                print(len(zarr_arr), zarr_idx, len(hdf5_arr), hdf5_idx)
                 return False
         
         with tqdm(total=n_steps*len(rgb_keys), desc="Loading image data", mininterval=1.0) as pbar:
@@ -412,7 +419,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         compressor=this_compressor,
                         dtype=np.uint8
                     )
-                    for episode_idx in range(len(demos)):
+                    for episode_idx in range(start_from,len(demos)+start_from):
                         demo = demos[f'demo_{episode_idx}']
                         hdf5_arr = demo['obs'][key]
                         for hdf5_idx in range(hdf5_arr.shape[0]):
@@ -425,7 +432,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                                         raise RuntimeError('Failed to encode image!')
                                 pbar.update(len(completed))
 
-                            zarr_idx = episode_starts[episode_idx] + hdf5_idx
+                            zarr_idx = episode_starts[episode_idx-1] + hdf5_idx
                             futures.add(
                                 executor.submit(img_copy, 
                                     img_arr, zarr_idx, hdf5_arr, hdf5_idx))

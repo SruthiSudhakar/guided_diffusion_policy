@@ -24,7 +24,8 @@ import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.env_utils as EnvUtils
 import robomimic.utils.obs_utils as ObsUtils
 from lovely_numpy import lo
-import pdb
+import pdb, json
+from termcolor import colored
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
@@ -42,7 +43,7 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     return env
 
 
-class RobomimicImageRunnerEval(BaseImageRunner):
+class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
     Robomimic envs already enforces number of steps.
     """
@@ -109,6 +110,8 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
+                        env_model=None,
+                        ep_meta=None,
                         render_obs_key=render_obs_key
                     ),
                     video_recoder=VideoRecorder.create_h264(
@@ -144,6 +147,8 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                         env=robomimic_env,
                         shape_meta=shape_meta,
                         init_state=None,
+                        env_model=None,
+                        ep_meta=None,
                         render_obs_key=render_obs_key
                     ),
                     video_recoder=VideoRecorder.create_h264(
@@ -173,8 +178,10 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 train_idx = train_start_idx + i
                 enable_render = True
                 init_state = f[f'data/demo_{train_idx}/states'][0]
+                env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
+                ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
 
-                def init_fn(env, init_state=init_state, 
+                def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
                     # setup rendering
                     # video_wrapper
@@ -191,6 +198,11 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                     # switch to init_state reset
                     assert isinstance(env.env.env, RobomimicImageWrapper)
                     env.env.env.init_state = init_state
+                    env.env.env.env_model = env_model
+                    env.env.env.ep_meta = ep_meta
+                    env.env.env.env.env.hard_reset=True
+                    env.env.env.reset()
+                    env.env.env.env.env.hard_reset=False
 
                 env_seeds.append(train_idx)
                 env_prefixs.append('train/')
@@ -309,7 +321,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 with torch.no_grad():
                     new_obs_dict = {}
                     for k,v in obs_dict.items():
-                        new_obs_dict[k]=v#v[:,-2:]
+                        new_obs_dict[k]=v[:,-2:]
                     if classifier:
                         action_dict = policy.predict_action(new_obs_dict, classifier, guidance_scale, guided_towards)
                     else:
@@ -338,7 +350,11 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 # actionpath = np.load('/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.06.05/15.00.33_train_diffusion_unet_hybrid_liftph/checkpoints/epoch=0150-test_mean_score=0.980/1000galift_hammer_8_16_53_6/actions.npy', allow_pickle=True)
                 # env_action = actionpath[env_step_index,this_global_slice,:,:]
                 
-                obs, reward, done, info = env.step(env_action)
+                add_on = np.tile([0., -0.,  0.,  0., -1.], (env_action.shape[0], env_action.shape[1], 1))
+                extended_env_action = np.concatenate((env_action, add_on), axis=-1)
+                obs, reward, done, info = env.step(extended_env_action)
+                
+
                 # env_step_index+=1
                 if self.save_stuff:
                     print('MORE SAVING STUFF')
@@ -386,7 +402,6 @@ class RobomimicImageRunnerEval(BaseImageRunner):
                 del save_rollout_actions
                 if 'added_state' in locals():
                     del added_state
-
 
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]

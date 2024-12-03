@@ -259,6 +259,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         global_cond = None
         if self.obs_as_global_cond:
             # condition through global feature
+            #this_nobs['robot0_eef_pos']==nobs['robot0_eef_pos'][:,-2:].reshape(-1,*nobs['robot0_eef_pos'].shape[2:]) THIS IS NOT TRUE if u sent in 8 OBSERVATIONS IN NOBS!!!!!!
             this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, Do

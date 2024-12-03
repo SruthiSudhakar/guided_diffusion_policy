@@ -12,12 +12,16 @@ class RobomimicImageWrapper(gym.Env):
         env: EnvRobosuite,
         shape_meta: dict,
         init_state: Optional[np.ndarray]=None,
+        env_model: Optional[str]=None,
+        ep_meta: Optional[str]=None,
         render_obs_key='agentview_image',
         ):
 
         self.env = env
         self.render_obs_key = render_obs_key
         self.init_state = init_state
+        self.env_model = env_model
+        self.ep_meta = ep_meta
         self.seed_state_map = dict()
         self._seed = None
         self.shape_meta = shape_meta
@@ -84,7 +88,10 @@ class RobomimicImageWrapper(gym.Env):
 
             # always reset to the same state
             # to be compatible with gym
-            raw_obs = self.env.reset_to({'states': self.init_state})
+            if self.env_model and self.ep_meta:
+                raw_obs = self.env.reset_to({'states': self.init_state, "model": self.env_model, "ep_meta": self.ep_meta})
+            else:
+                raw_obs = self.env.reset_to({'states': self.init_state})
         elif self._seed is not None:
             # reset to a specific seed
             seed = self._seed
