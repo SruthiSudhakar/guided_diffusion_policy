@@ -22,20 +22,8 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 \
                 --save
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=1000-test_mean_score=0.000.ckpt \
-                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=1000-test_mean_score=0.000/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5 \
-                --max_steps 500 \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.12.03/16.18.51_train_diffusion_unet_hybrid_robocasa_PnPCabToCounter/checkpoints/epoch=0200-val_loss=0.030.ckpt \
                 --device cuda:0 \
-                --n_train 50 \
-                --n_test 50 \
-                --robocasa
-
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.51.31_train_diffusion_unet_hybrid_robocasa_closedrawer/checkpoints/epoch=1000-test_mean_score=0.000.ckpt \
-                --output_dir  /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.51.31_train_diffusion_unet_hybrid_robocasa_closedrawer/checkpoints/epoch=1000-test_mean_score=0.000/ \
-                --dataset_path /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams.hdf5 \
-                --max_steps 300 \
-                --device cuda:1 \
                 --n_train 50 \
                 --n_test 50 \
                 --robocasa
@@ -59,18 +47,20 @@ from diffusion_policy.workspace.base_workspace import BaseWorkspace
 import pdb
 from omegaconf import OmegaConf,open_dict
 import datetime
+import yaml
+import h5py
 
 @click.command()
 @click.option('-c', '--checkpoint', required=True)
 @click.option('-dataset_path', '--dataset_path', required=False)
-@click.option('-o', '--output_dir', required=True)
+@click.option('-o', '--output_dir', required=False)
 @click.option('-classifier_dir', '--classifier_dir', required=False)
 @click.option('-guidance_scale', '--guidance_scale', required=False)
 @click.option('-guided_towards', '--guided_towards', required=False)
 @click.option('-d', '--device', default='cuda:0')
 @click.option('-max_steps', '--max_steps', default=500)
-@click.option('-n_train', '--n_train', required=True)
-@click.option('-n_test', '--n_test', required=True)
+@click.option('-n_train', '--n_train', default=50)
+@click.option('-n_test', '--n_test', default=50)
 @click.option('-n_envs', '--n_envs', default=28)
 @click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default=None)
@@ -78,6 +68,26 @@ import datetime
 @click.option('-save', '--save', is_flag=True)
 @click.option('-robocasa', '--robocasa', is_flag=True)
 def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, n_envs, save, test_start_seed, robocasa):
+    output_dir = checkpoint[:-5]+'/'  # Replace with your file path
+    yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
+    with open(yaml_file, 'r') as file:
+        data = yaml.safe_load(file)
+    # Convert the list into a dictionary
+    parsed_data = {}
+    for item in data:
+        key, value = item.split('=', 1)
+        parsed_data[key.strip()] = value.strip()
+    # Extract the value for task.dataset_path
+    dataset_path = parsed_data.get('task.dataset_path')
+    print("Value of task.dataset_path:", dataset_path)
+    max_steps = 0
+    data = h5py.File(dataset_path, 'r')
+    for i in data['data']:
+        max_steps = max(max_steps,data['data'][i]['actions'].shape[0])
+    max_steps+=50
+    print('max_steps',max_steps)
+    data.close()    
+    
     current_time = datetime.datetime.now()
     if classifier_dir:
         output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
