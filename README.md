@@ -51,7 +51,7 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
     task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5 \
     task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_doors/OpenSingleDoor/2024-04-24/demo_gentex_im128_randcams.hdf5 \
     task.env_runner.max_steps=500 
-    ```
+```
 
 You can also use accelerate to do multi-gpu training by chainging the first line of that command above ^ to this:
 ```
