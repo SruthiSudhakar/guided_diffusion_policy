@@ -1,9 +1,11 @@
 # Installation
 1. create a new conda environment
 then install these torch libraries:
-```pip install torch==1.12.1+cu116
+```
+pip install torch==1.12.1+cu116
 pip install torchaudio==0.12.1+cu116
-pip install torchvision==0.13.1+cu116```
+pip install torchvision==0.13.1+cu116
+```
 
 2. run pip install -r /proj/vondrick3/sruthi/robots/diffusion_policy/jgdreq.txt
 
