@@ -9,7 +9,18 @@ export HYDRA_FULL_ERROR=1
 using the clonejgdrobodiff bc it has robocasa and the updated version of robosuite. with changes added ontop of that to be compatible with dp
 Usage:
 Training:
-    
+CUDA_VISIBLE_DEVICES=4 python train.py \
+    --config-dir=. \
+    --config-name=image_robocasa_gdp.yaml \
+    training.seed=42 \
+    dataloader.batch_size=256 \
+    val_dataloader.batch_size=256 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_robocasa_PreSoakPan' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/washing_dishes/PreSoakPan/2024-05-10/demo_im128.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/washing_dishes/PreSoakPan/2024-05-10/demo_im128.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/washing_dishes/PreSoakPan/2024-05-10/demo_im128.hdf5 \
+    task.env_runner.max_steps=900  
+
 1. OpenSingleDoor
 CUDA_VISIBLE_DEVICES=0 python train.py \
     --config-dir=. \
@@ -166,16 +177,18 @@ CUDA_VISIBLE_DEVICES=2 python train.py \
     task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5 \
     task.env_runner.max_steps=700 
 
-
-
-
-
-
-
-
-
-
-
+12. MicrowaveThawing
+CUDA_VISIBLE_DEVICES=0 python train.py \
+    --config-dir=. \
+    --config-name=image_robocasa_gdp.yaml \
+    training.seed=42 \
+    dataloader.batch_size=256 \
+    val_dataloader.batch_size=256 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_robocasa_MicrowaveThawing' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/defrosting_food/MicrowaveThawing/2024-05-11/demo_im128.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/defrosting_food/MicrowaveThawing/2024-05-11/demo_im128.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/multi_stage/defrosting_food/MicrowaveThawing/2024-05-11/demo_im128.hdf5 \
+    task.env_runner.max_steps=801
 
 
 

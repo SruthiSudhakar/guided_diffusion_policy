@@ -354,7 +354,7 @@ training:
   num_epochs: 8000
   resume: false
   rollout_every: 500
-  sample_every: 5
+  sample_every: 50
   seed: 42
   tqdm_interval_sec: 1.0
   use_ema: true

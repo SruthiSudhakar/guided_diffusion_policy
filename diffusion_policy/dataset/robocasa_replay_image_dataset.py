@@ -32,6 +32,7 @@ from diffusion_policy.common.normalize_util import (
 import math
 
 import pdb
+from termcolor import colored
 register_codecs()
 
 class RobocasaReplayImageDataset(BaseImageDataset):
@@ -325,12 +326,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         demos = file['data']
         episode_ends = list()
         prev_end = 0
-        if 'demo_0' in demos:
-            start_from=0
-        else:
-            start_from=1
-        for i in range(start_from,len(demos)+start_from):
-            demo = demos[f'demo_{i}']
+        for i in list(demos.keys())[-2:]:
+            demo = demos[i]
             episode_length = demo['actions'].shape[0]
             episode_end = prev_end + episode_length
             prev_end = episode_end
@@ -355,8 +352,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             if key == 'object':
                 data_key = 'object'
             this_data = list()
-            for i in range(start_from,len(demos)+start_from):
-                demo = demos[f'demo_{i}']
+            for i in list(demos.keys())[-2:]:
+                demo = demos[i]
                 if key=='object':
                     this_data.append([demo[data_key].asstr()[()]])
                 else:
@@ -419,8 +416,9 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         compressor=this_compressor,
                         dtype=np.uint8
                     )
-                    for episode_idx in range(start_from,len(demos)+start_from):
-                        demo = demos[f'demo_{episode_idx}']
+                    episode_starts_idx=0
+                    for i in list(demos.keys())[-2:]:
+                        demo = demos[i]
                         hdf5_arr = demo['obs'][key]
                         for hdf5_idx in range(hdf5_arr.shape[0]):
                             if len(futures) >= max_inflight_tasks:
@@ -432,10 +430,11 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                                         raise RuntimeError('Failed to encode image!')
                                 pbar.update(len(completed))
 
-                            zarr_idx = episode_starts[episode_idx-1] + hdf5_idx
+                            zarr_idx = episode_starts[episode_starts_idx] + hdf5_idx
                             futures.add(
                                 executor.submit(img_copy, 
                                     img_arr, zarr_idx, hdf5_arr, hdf5_idx))
+                        episode_starts_idx+=1
                 completed, futures = concurrent.futures.wait(futures)
                 for f in completed:
                     if not f.result():

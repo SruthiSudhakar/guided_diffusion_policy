@@ -1,102 +1,141 @@
-import pdb, json, sys
+# import pdb, json, sys
+# import matplotlib.pyplot as plt
+# import numpy as np
+# import mpld3
+# from matplotlib.widgets import CheckButtons
+# # Using readlines()
+# filename = sys.argv[1]
+# file1 = open(filename, 'r')
+# Lines = file1.readlines()
+
+# train_losses=[0]
+# global_step=[0]
+# train_guidance_grad_scaled=[0]
+# train_mse_losses=[0]
+# test_mean_scores=[0]
+# train_mean_scores=[0]
+# epoch=[0]
+# # Strips the newline character
+# inthere = 'train_guidance_grad_scaled' in Lines[0]
+# for line in Lines:
+#     if 'test/mean_score' in line:
+#         try:
+#             test_mean_scores.append(json.loads(line)['test/mean_score'])
+#             train_mean_scores.append(json.loads(line)['train/mean_score'])
+#         except:
+#             test_mean_scores.append(float(line.split('test/mean_score": ')[-1][:3]))
+#             train_mean_scores.append(float(line.split('train/mean_score": ')[-1][:3]))
+#     else:
+#         test_mean_scores.append(test_mean_scores[-1])
+#         train_mean_scores.append(train_mean_scores[-1])
+#     try:
+#         line=json.loads(line)
+#         # print(line)
+#         train_losses.append(line['train_loss'])
+#         if inthere:
+#             train_guidance_grad_scaled.append(line['train_guidance_grad_scaled'])
+#             train_mse_losses.append(line['train_mse_losses'])
+#         else:
+#             train_guidance_grad_scaled.append(0)
+#             train_mse_losses.append(0)
+#         global_step.append(line['global_step'])
+#         epoch.append(line['epoch'])
+#     except:
+#         train_losses.append(train_losses[-1])
+#         train_guidance_grad_scaled.append(line[-1])
+#         train_mse_losses.append(line[-1])
+#         global_step.append(global_step[-1])
+#         epoch.append(epoch[-1])
+# train_losses=train_losses[1:]
+# train_guidance_grad_scaled=train_guidance_grad_scaled[1:]
+# train_mse_losses=train_mse_losses[1:]
+
+# global_step=global_step[1:]
+# epoch=epoch[1:]
+
+# fig, ax = plt.subplots()
+# plt.subplots_adjust(left=0.2)
+
+# line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
+# line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
+# line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
+# plt.legend()
+
+# plt.show()
+
+# plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display
+
+# fig, ax = plt.subplots()
+# plt.subplots_adjust(left=0.2)
+
+# line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
+# line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
+# line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
+# line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
+# line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
+# plt.legend()
+
+# check_ax = plt.axes([0.05, 0.4, 0.1, 0.15])
+# check = CheckButtons(check_ax, ['Test Mean Score', 'Test Mean Loss'], [True, True])
+
+# # Function to toggle visibility
+# def toggle_visibility(label):
+#     if label == 'Test Mean Score':
+#         line1.set_visible(not line1.get_visible())
+#     elif label == 'Test Mean Loss':
+#         line2.set_visible(not line2.get_visible())
+#     if label == 'train_loss':
+#         line3.set_visible(not line3.get_visible())
+#     elif label == 'train_guidance_grad_scaled':
+#         line4.set_visible(not line4.get_visible())
+#     if label == 'train_mse_losses':
+#         line5.set_visible(not line5.get_visible())
+#     elif label == 'val_score':
+#         line6.set_visible(not line6.get_visible())
+#     if label == 'train_score':
+#         line7.set_visible(not line7.get_visible())
+#     plt.draw()
+
+
+# check.on_clicked(toggle_visibility)
+
+# mpld3.save_html(fig, '/'.join(filename.split('/')[:-1])+'/trainloss_epoch.html')
+
+import json, sys
 import matplotlib.pyplot as plt
-import numpy as np
-import mpld3
-from matplotlib.widgets import CheckButtons
-# Using readlines()
-filename = sys.argv[1]
-file1 = open(filename, 'r')
-Lines = file1.readlines()
+file_path = sys.argv[1]
 
-train_losses=[0]
-global_step=[0]
-train_guidance_grad_scaled=[0]
-train_mse_losses=[0]
-test_mean_scores=[0]
-train_mean_scores=[0]
-epoch=[0]
-# Strips the newline character
-inthere = 'train_guidance_grad_scaled' in Lines[0]
-for line in Lines:
-    if 'test/mean_score' in line:
+# Lists to store the values
+train_loss = []
+val_loss = []
+steps = []
+
+# Read the file and process each line
+with open(file_path, "r") as file:
+    for line in file:
         try:
-            test_mean_scores.append(json.loads(line)['test/mean_score'])
-            train_mean_scores.append(json.loads(line)['train/mean_score'])
-        except:
-            test_mean_scores.append(float(line.split('test/mean_score": ')[-1][:3]))
-            train_mean_scores.append(float(line.split('train/mean_score": ')[-1][:3]))
-    else:
-        test_mean_scores.append(test_mean_scores[-1])
-        train_mean_scores.append(train_mean_scores[-1])
-    try:
-        line=json.loads(line)
-        # print(line)
-        train_losses.append(line['train_loss'])
-        if inthere:
-            train_guidance_grad_scaled.append(line['train_guidance_grad_scaled'])
-            train_mse_losses.append(line['train_mse_losses'])
-        else:
-            train_guidance_grad_scaled.append(0)
-            train_mse_losses.append(0)
-        global_step.append(line['global_step'])
-        epoch.append(line['epoch'])
-    except:
-        train_losses.append(train_losses[-1])
-        train_guidance_grad_scaled.append(line[-1])
-        train_mse_losses.append(line[-1])
-        global_step.append(global_step[-1])
-        epoch.append(epoch[-1])
-train_losses=train_losses[1:]
-train_guidance_grad_scaled=train_guidance_grad_scaled[1:]
-train_mse_losses=train_mse_losses[1:]
+            # Parse the JSON data in the line
+            data = json.loads(line)
+            # Append train_loss and global_step
+            train_loss.append(data.get("train_loss"))
+            steps.append(data.get("global_step"))
+            # Append val_loss if it exists
+            if "val_loss" in data:
+                val_loss.append((data["global_step"], data["val_loss"]))
+        except json.JSONDecodeError:
+            print(f"Skipping invalid line: {line}")
 
-global_step=global_step[1:]
-epoch=epoch[1:]
+# Extract the steps and values for val_loss
+val_loss_steps, val_loss_values = zip(*val_loss) if val_loss else ([], [])
 
-fig, ax = plt.subplots()
-plt.subplots_adjust(left=0.2)
-
-line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
-line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
-line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
+# Plot the losses
+plt.figure(figsize=(10, 6))
+plt.plot(steps, train_loss, label="Train Loss", marker="o")
+if val_loss_steps:
+    plt.plot(val_loss_steps, val_loss_values, label="Validation Loss", marker="x", linestyle="--")
+plt.xlabel("Global Step")
+plt.ylabel("Loss")
+plt.title("Train and Validation Loss Over Steps")
 plt.legend()
-
-plt.show()
-
-plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display
-
-fig, ax = plt.subplots()
-plt.subplots_adjust(left=0.2)
-
-line3, = ax.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
-line4, = ax.plot(epoch, train_guidance_grad_scaled, label = "train_guidance_grad_scaled")   # Plot the chart
-line5, = ax.plot(epoch, train_mse_losses, label = "train_mse_losses")   # Plot the chart
-line6, = ax.plot(epoch, test_mean_scores[1:], label = "val_score")   # Plot the chart
-line7, = ax.plot(epoch, train_mean_scores[1:], label = "train_score")   # Plot the chart
-plt.legend()
-
-check_ax = plt.axes([0.05, 0.4, 0.1, 0.15])
-check = CheckButtons(check_ax, ['Test Mean Score', 'Test Mean Loss'], [True, True])
-
-# Function to toggle visibility
-def toggle_visibility(label):
-    if label == 'Test Mean Score':
-        line1.set_visible(not line1.get_visible())
-    elif label == 'Test Mean Loss':
-        line2.set_visible(not line2.get_visible())
-    if label == 'train_loss':
-        line3.set_visible(not line3.get_visible())
-    elif label == 'train_guidance_grad_scaled':
-        line4.set_visible(not line4.get_visible())
-    if label == 'train_mse_losses':
-        line5.set_visible(not line5.get_visible())
-    elif label == 'val_score':
-        line6.set_visible(not line6.get_visible())
-    if label == 'train_score':
-        line7.set_visible(not line7.get_visible())
-    plt.draw()
-
-
-check.on_clicked(toggle_visibility)
-
-mpld3.save_html(fig, '/'.join(filename.split('/')[:-1])+'/trainloss_epoch.html')
+plt.grid(True)
+plt.savefig('/'.join(file_path.split('/')[:-1])+'/trainloss_epoch.png')  # display

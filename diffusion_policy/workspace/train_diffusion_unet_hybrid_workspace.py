@@ -33,6 +33,7 @@ from accelerate import Accelerator
 import pdb
 import dill
 import time
+from termcolor import colored
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -364,10 +365,10 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                     B, T, _ = pred_action.shape
                     pred_action = pred_action.view(B, T, -1, 10)
                     gt_action = gt_action.view(B, T, -1, 10)
-                    step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action)
-                    step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3])
-                    step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9])
-                    step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9])
+                    step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action).item()
+                    step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3]).item()
+                    step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9]).item()
+                    step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9]).item()
                 # run diffusion sampling on a training batch
                 if (self.epoch % cfg.training.sample_every) == 0 and accelerator.is_main_process:
                     with torch.no_grad():
@@ -380,7 +381,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         # result = policy.predict_action(obs_dict, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale, guided_towards=1.0)
                         pred_action = result['action_pred']
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
-                        log_action_mse(step_log, 'val', pred_action, gt_action)
+                        log_action_mse(step_log, 'train', pred_action, gt_action)
                         del batch
                         del obs_dict
                         del gt_action

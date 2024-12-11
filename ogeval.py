@@ -2,7 +2,7 @@
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 source /proj/vondrick3/sruthi/miniconda3/bin/activate
-conda activate jgdrobodiff
+conda activate clonejgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
@@ -22,12 +22,9 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 \
                 --save
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.12.03/16.18.51_train_diffusion_unet_hybrid_robocasa_PnPCabToCounter/checkpoints/epoch=0200-val_loss=0.030.ckpt \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=2000-test_mean_score=0.000.ckpt \
                 --device cuda:0 \
-                --n_train 50 \
-                --n_test 50 \
                 --robocasa
-
 """
 
 import sys
@@ -58,7 +55,7 @@ import h5py
 @click.option('-guidance_scale', '--guidance_scale', required=False)
 @click.option('-guided_towards', '--guided_towards', required=False)
 @click.option('-d', '--device', default='cuda:0')
-@click.option('-max_steps', '--max_steps', default=500)
+@click.option('-max_steps', '--max_steps', default=None, type=int)
 @click.option('-n_train', '--n_train', default=50)
 @click.option('-n_test', '--n_test', default=50)
 @click.option('-n_envs', '--n_envs', default=28)
@@ -67,8 +64,9 @@ import h5py
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
 @click.option('-robocasa', '--robocasa', is_flag=True)
-def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, object, add, n_train, n_test, n_envs, save, test_start_seed, robocasa):
-    output_dir = checkpoint[:-5]+'/'  # Replace with your file path
+def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa):
+    if output_dir is None:
+        output_dir = checkpoint[:-5]+'/'  # Replace with your file path
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
     with open(yaml_file, 'r') as file:
         data = yaml.safe_load(file)
@@ -80,13 +78,14 @@ def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, g
     # Extract the value for task.dataset_path
     dataset_path = parsed_data.get('task.dataset_path')
     print("Value of task.dataset_path:", dataset_path)
-    max_steps = 0
-    data = h5py.File(dataset_path, 'r')
-    for i in data['data']:
-        max_steps = max(max_steps,data['data'][i]['actions'].shape[0])
-    max_steps+=50
-    print('max_steps',max_steps)
-    data.close()    
+    if max_steps is None:
+        max_steps=0
+        data = h5py.File(dataset_path, 'r')
+        for i in data['data']:
+            max_steps = max(max_steps,data['data'][i]['actions'].shape[0])
+        max_steps+=50
+        print('max_steps',max_steps)
+        data.close()    
     
     current_time = datetime.datetime.now()
     if classifier_dir:
