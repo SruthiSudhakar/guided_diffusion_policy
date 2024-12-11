@@ -326,7 +326,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
         demos = file['data']
         episode_ends = list()
         prev_end = 0
-        for i in list(demos.keys())[-2:]:
+        for i in list(demos.keys()):
             demo = demos[i]
             episode_length = demo['actions'].shape[0]
             episode_end = prev_end + episode_length
@@ -352,7 +352,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             if key == 'object':
                 data_key = 'object'
             this_data = list()
-            for i in list(demos.keys())[-2:]:
+            for i in list(demos.keys()):
                 demo = demos[i]
                 if key=='object':
                     this_data.append([demo[data_key].asstr()[()]])
@@ -417,7 +417,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                         dtype=np.uint8
                     )
                     episode_starts_idx=0
-                    for i in list(demos.keys())[-2:]:
+                    for i in list(demos.keys()):
                         demo = demos[i]
                         hdf5_arr = demo['obs'][key]
                         for hdf5_idx in range(hdf5_arr.shape[0]):
