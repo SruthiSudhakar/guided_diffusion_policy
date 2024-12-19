@@ -33,6 +33,15 @@ import math
 
 import pdb
 from termcolor import colored
+from lovely_tensors import lovely
+from transformers import CLIPTokenizer, CLIPModel
+import torch
+# Load the CLIP model and tokenizer
+clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
+clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+clip_model = CLIPModel.from_pretrained(clip_model_name)
+
+
 register_codecs()
 
 class RobocasaReplayImageDataset(BaseImageDataset):
@@ -58,6 +67,10 @@ class RobocasaReplayImageDataset(BaseImageDataset):
         if use_cache:
             cache_zarr_path = dataset_path + '.zarr.zip'
             cache_lock_path = cache_zarr_path + '.lock'
+            # cache_zarr_path = dataset_path + 'minilangabsaction.zarr.zip'
+            # cache_lock_path = cache_zarr_path + 'minilangabsaction.lock'
+            if 'minilang' in cache_zarr_path:
+                print(colored('YOUR USING THE MINILANG','magenta'))
             print('Acquiring lock on cache.')
             with FileLock(cache_lock_path):
                 if not os.path.exists(cache_zarr_path):
@@ -184,7 +197,10 @@ class RobocasaReplayImageDataset(BaseImageDataset):
                 this_normalizer = get_identity_normalizer_from_stat(stat)
             elif key.endswith('qpos'):
                 this_normalizer = get_range_normalizer_from_stat(stat)
+            elif key.endswith('language_goal'):
+                this_normalizer = get_range_normalizer_from_stat(stat)
             else:
+                print(colored('ISSUE WITH THE NORMALIZER','red'))
                 raise RuntimeError('unsupported')
             normalizer[key] = this_normalizer
 
@@ -259,7 +275,10 @@ class RobocasaReplayImageDataset(BaseImageDataset):
             # T,C,H,W
             del data[key]
         for key in self.lowdim_keys:
-            obs_dict[key] = data[key][T_slice].astype(np.float32)
+            if key=='language_goal':
+                obs_dict['language_goal'] = np.tile(data['language_goal'].astype(np.float32), (self.n_obs_steps, 1))  # Shape becomes (self.n_obs,steps, 512)
+            else:    
+                obs_dict[key] = data[key][T_slice].astype(np.float32)
             del data[key]
 
         torch_data = {
@@ -294,6 +313,8 @@ def _convert_actions(raw_actions, abs_action, rotation_transformer):
         if is_dual_arm:
             raw_actions = raw_actions.reshape(-1,20)
         actions = raw_actions
+    else:
+        actions = actions[...,:7]
     return actions
 
 
@@ -354,12 +375,20 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
             this_data = list()
             for i in list(demos.keys()):
                 demo = demos[i]
-                if key=='object':
+                if key=='language_goal':
+                    text = [json.loads(demos[i].attrs['ep_meta'])['lang']]
+                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                    # Encode the text using CLIP
+                    with torch.no_grad():
+                        text_embeddings = clip_model.get_text_features(**inputs)
+                    this_data.append(text_embeddings)
+                elif key=='object':
                     this_data.append([demo[data_key].asstr()[()]])
                 else:
                     try:
                         this_data.append(demo[data_key][:].astype(np.float32))
                     except:
+                        print('IN THE EXCEPTION')
                         pdb.set_trace()
             this_data = np.concatenate(this_data, axis=0)
             if key == 'action':
@@ -370,16 +399,14 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                 )
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['action']['shape'])
             elif key == 'success':
-                print('SIZE OF SUCCESS', this_data.shape)
-                assert True==True
+                assert this_data.shape == (len(episode_ends),1)
             elif key == 'object':
-                print('SIZE OF OBJECT', this_data.shape)
-                assert True==True
+                assert this_data.shape == (len(episode_ends),1)
+            elif key == 'language_goal':
+                assert this_data.shape == (len(episode_ends),) + tuple(shape_meta['obs'][key]['shape'])
             else:
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['obs'][key]['shape'])
             
-            if key=='object':
-                this_data=this_data
             _ = data_group.array(
                 name=key,
                 data=this_data,

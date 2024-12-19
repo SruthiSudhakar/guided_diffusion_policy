@@ -82,8 +82,11 @@ classifier_policy:
   shape_meta:
     action:
       shape:
-      - 10
+      - 7
     obs:
+      language_goal:
+        shape:
+        - 512
       robot0_eye_in_hand_image:
         shape:
         - 3
@@ -143,8 +146,11 @@ policy:
   shape_meta:
     action:
       shape:
-      - 10
+      - 7
     obs:
+      language_goal:
+        shape:
+        - 512
       robot0_eye_in_hand_image:
         shape:
         - 3
@@ -175,8 +181,11 @@ policy:
 shape_meta:
   action:
     shape:
-    - 10
+    - 7
   obs:
+    language_goal:
+      shape:
+      - 512
     robot0_eye_in_hand_image:
       shape:
       - 3
@@ -205,10 +214,10 @@ shape_meta:
       shape:
       - 2
 task:
-  abs_action: true
+  abs_action: false
   dataset:
     _target_: diffusion_policy.dataset.robocasa_replay_image_dataset.RobocasaReplayImageDataset
-    abs_action: true
+    abs_action: false
     dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
     horizon: 16
     n_obs_steps: 2
@@ -219,8 +228,11 @@ task:
     shape_meta:
       action:
         shape:
-        - 10
+        - 7
       obs:
+        language_goal:
+          shape:
+          - 512
         robot0_eye_in_hand_image:
           shape:
           - 3
@@ -256,11 +268,11 @@ task:
   dataset_type: ph
   env_runner:
     _target_: diffusion_policy.env_runner.robocasa_robomimic_image_runner.RobocasaRobomimicImageRunner
-    abs_action: true
+    abs_action: false
     crf: 22
     dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
     fps: 10
-    max_steps: 400
+    max_steps: 360
     n_action_steps: 8
     n_envs: 28
     n_obs_steps: 2
@@ -273,8 +285,11 @@ task:
     shape_meta:
       action:
         shape:
-        - 10
+        - 7
       obs:
+        language_goal:
+          shape:
+          - 512
         robot0_eye_in_hand_image:
           shape:
           - 3
@@ -309,8 +324,11 @@ task:
   shape_meta:
     action:
       shape:
-      - 10
+      - 7
     obs:
+      language_goal:
+        shape:
+        - 512
       robot0_eye_in_hand_image:
         shape:
         - 3
@@ -343,7 +361,7 @@ task_name: square_image
 training:
   classifier_dir: ''
   guidance_scale: 950
-  checkpoint_every: 100
+  checkpoint_every: 50
   debug: false
   device: cuda:0
   gradient_accumulate_every: 1
@@ -358,7 +376,7 @@ training:
   seed: 42
   tqdm_interval_sec: 1.0
   use_ema: true
-  val_every: 25
+  val_every: 50
 val_dataloader:
   batch_size: 64
   num_workers: 8

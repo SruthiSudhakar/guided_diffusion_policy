@@ -1,6 +1,7 @@
 import torch
 import torchvision
 import pdb
+from termcolor import colored
 
 def get_resnet(name, weights=None, **kwargs):
     """
@@ -10,8 +11,8 @@ def get_resnet(name, weights=None, **kwargs):
     # load r3m weights
     if (weights == "r3m") or (weights == "R3M"):
         return get_r3m(name=name, **kwargs)
-
-    print('USING OTHER WEIGHTS:', name)
+    #TODO: figure out how to load imagnet or clip resnet weights
+    print(colored(f'USING OTHER WEIGHTS: {name}','magenta'))
     func = getattr(torchvision.models, name)
     resnet = func(weights=weights, **kwargs)
     resnet.fc = torch.nn.Identity()

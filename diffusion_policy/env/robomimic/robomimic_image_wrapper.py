@@ -14,6 +14,7 @@ class RobomimicImageWrapper(gym.Env):
         init_state: Optional[np.ndarray]=None,
         env_model: Optional[str]=None,
         ep_meta: Optional[str]=None,
+        language_goal: Optional[str]=None,
         render_obs_key='agentview_image',
         ):
 
@@ -22,6 +23,7 @@ class RobomimicImageWrapper(gym.Env):
         self.init_state = init_state
         self.env_model = env_model
         self.ep_meta = ep_meta
+        self.language_goal = language_goal
         self.seed_state_map = dict()
         self._seed = None
         self.shape_meta = shape_meta
@@ -51,6 +53,11 @@ class RobomimicImageWrapper(gym.Env):
             elif key.endswith('pos'):
                 # better range?
                 min_value, max_value = -1, 1
+            elif key.endswith('language_goal'):
+                # better range?
+                #pdb.set_trace()
+                #TODO: is this the right range we should apply for the language goal??
+                min_value, max_value = 0, 1
             else:
                 raise RuntimeError(f"Unsupported type {key}")
             
@@ -72,6 +79,9 @@ class RobomimicImageWrapper(gym.Env):
 
         obs = dict()
         for key in self.observation_space.keys():
+            if key=='language_goal':
+                #TODO: what if we change the language goal? this should not return the old language goal then.
+                raw_obs['language_goal'] = self.language_goal
             obs[key] = raw_obs[key]
         return obs
 

@@ -20,6 +20,7 @@ import diffusion_policy.model.vision.crop_randomizer as dmvc
 from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 import pdb
 import numpy as np
+from lovely_tensors import lovely
 
 class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def __init__(self, 
@@ -77,7 +78,10 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         with config.unlocked():
             # set config with shape_meta
             config.observation.modalities.obs = obs_config
-
+            if 'obs' in shape_meta and 'language_goal' in shape_meta['obs']:
+                print('MAKING VISUAL CORE LANGUAGE CONDITIONED')
+                config.observation.encoder.rgb.core_class='VisualCoreLanguageConditioned'
+                config.observation.encoder.rgb.core_kwargs.backbone_class='ResNet18ConvFiLM'
             if crop_shape is None:
                 for key, modality in config.observation.encoder.items():
                     if modality.obs_randomizer_class == 'CropRandomizer':
@@ -260,7 +264,10 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         if self.obs_as_global_cond:
             # condition through global feature
             #this_nobs['robot0_eef_pos']==nobs['robot0_eef_pos'][:,-2:].reshape(-1,*nobs['robot0_eef_pos'].shape[2:]) THIS IS NOT TRUE if u sent in 8 OBSERVATIONS IN NOBS!!!!!!
-            this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
+            if nobs['robot0_eef_pos'].shape[1]>2:
+                print('HEYYYYYYY')
+                pdb.set_trace()
+            this_nobs = dict_apply(nobs, lambda x: x[:,-To:,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, Do
             global_cond = nobs_features.reshape(B, -1)
@@ -269,7 +276,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             cond_mask = torch.zeros_like(cond_data, dtype=torch.bool)
         else:
             # condition through impainting
-            this_nobs = dict_apply(nobs, lambda x: x[:,:To,...].reshape(-1,*x.shape[2:]))
+            this_nobs = dict_apply(nobs, lambda x: x[:,-To:,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, To, Do
             nobs_features = nobs_features.reshape(B, To, -1)
@@ -324,13 +331,15 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         if self.obs_as_global_cond:
             # reshape B, T, ... to B*T
             this_nobs = dict_apply(nobs, 
-                lambda x: x[:,:self.n_obs_steps,...].reshape(-1,*x.shape[2:]))
+                lambda x: x[:,-self.n_obs_steps:,...].reshape(-1,*x.shape[2:]))
+            #TODO: reduce the output dimensionality of the language goal so it doesnt overpower the other lowdim keys
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, Do
             global_cond = nobs_features.reshape(batch_size, -1)
         else:
             # reshape B, T, ... to B*T
-            this_nobs = dict_apply(nobs, lambda x: x.reshape(-1, *x.shape[2:]))
+            this_nobs = dict_apply(nobs,
+                lambda x: x[:,-self.n_obs_steps:,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)
             # reshape back to B, T, Do
             nobs_features = nobs_features.reshape(batch_size, horizon, -1)

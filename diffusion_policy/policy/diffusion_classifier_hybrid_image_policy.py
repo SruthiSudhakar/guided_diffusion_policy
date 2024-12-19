@@ -197,6 +197,9 @@ class DiffusionClassifierHybridImagePolicy(BaseImagePolicy):
         cond_data = trajectory
         if self.obs_as_global_cond:
             # reshape B, T, ... to B*T
+            assert True==False
+            pdb.set_trace()
+            #SEE WHICH COND OBS ITS TAKING IN
             this_nobs = dict_apply(nobs, 
                 lambda x: x[:,:self.n_obs_steps,...].reshape(-1,*x.shape[2:]))
             nobs_features = self.obs_encoder(this_nobs)

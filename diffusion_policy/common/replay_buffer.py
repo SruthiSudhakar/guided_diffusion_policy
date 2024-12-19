@@ -104,6 +104,8 @@ class ReplayBuffer:
                 assert True==True
             elif key=='object':
                 assert True==True
+            elif key=='language_goal':
+                assert(value.shape[0] == len(root['meta']['episode_ends']))
             else:
                 assert(value.shape[0] == root['meta']['episode_ends'][-1])
         self.root = root

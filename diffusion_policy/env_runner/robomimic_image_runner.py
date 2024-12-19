@@ -298,10 +298,7 @@ class RobomimicImageRunner(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    new_obs_dict = {}
-                    for k,v in obs_dict.items():
-                        new_obs_dict[k]=v[:,-2:]
-                    action_dict = policy.predict_action(new_obs_dict)
+                    action_dict = policy.predict_action(obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,

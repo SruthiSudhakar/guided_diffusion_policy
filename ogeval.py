@@ -22,9 +22,12 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 \
                 --save
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.11.30/09.45.10_train_diffusion_unet_hybrid_robocasa_test_jgd/checkpoints/epoch=2000-test_mean_score=0.000.ckpt \
-                --device cuda:0 \
-                --robocasa
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.12.18/16.24.32_train_diffusion_unet_hybrid_robocasalang_PnPSinkToCounter/checkpoints/epoch=1000-val_loss=0.174.ckpt \
+                --device cuda:4 \
+                --robocasa \
+                --n_envs 1 \
+                --n_train 1 \
+                --n_test 1 
 """
 
 import sys

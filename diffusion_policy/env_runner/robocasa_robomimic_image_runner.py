@@ -40,6 +40,15 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     )
     return env
 
+# def get_distinct_floorplan_and_style():
+#     return None
+
+from transformers import CLIPTokenizer, CLIPModel
+import torch
+# Load the CLIP model and tokenizer
+clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
+clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+clip_model = CLIPModel.from_pretrained(clip_model_name)
 
 class RobocasaRobomimicImageRunner(BaseImageRunner):
     """
@@ -172,6 +181,7 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
         # train
         with h5py.File(dataset_path, 'r') as f:
             for i in range(n_train):
+                i=i % len(f['data'])
                 train_idx = train_start_idx + i
                 enable_render = i < n_train_vis
                 init_state = f[f'data/demo_{train_idx}/states'][0]
@@ -187,7 +197,7 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                     env.env.file_path = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
-                            'trainmedia', wv.util.generate_id() + ".mp4")
+                            'trainmedia', str(train_idx)+'_'+wv.util.generate_id() + ".mp4")
                         filename.parent.mkdir(parents=False, exist_ok=True)
                         filename = str(filename)
                         env.env.file_path = filename
@@ -197,13 +207,32 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                     env.env.env.init_state = init_state
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
+                    text = json.loads(ep_meta)['lang']
+                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                    # Encode the text using CLIP
+                    with torch.no_grad():
+                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                    env.env.env.language_goal = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
                     env.env.env.env.env.hard_reset=False
+                    """ 
+                    hierarchy:
+                    env.env.env
+                    <diffusion_policy.env.robomimic.robomimic_image_wrapper.RobomimicImageWrapper>
+                    
+                    env.env.env.env
+                    <class 'robomimic.envs.env_robosuite.EnvRobosuite'>
+                    
+                    env.env.env.env.env
+                    <robocasa.environments.kitchen.multi_stage.defrosting_food.microwave_thawing.MicrowaveThawing>
+                    """
                 env_seeds.append(train_idx)
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
         
+        #TODO: load the same train examples, and just switch out the object information
+        """
         # test
         for i in range(n_test):
             seed = test_start_seed + i
@@ -226,14 +255,61 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                 # switch to seed reset
                 assert isinstance(env.env.env, RobomimicImageWrapper)
                 env.env.env.init_state = None
+                #TODO: change the language embedding based on the desired object/skill
+                env.env.env.language_goal = language_goal_embedding
                 env.seed(seed)
 
             env_seeds.append(seed)
             env_prefixs.append('test/')
             env_init_fn_dills.append(dill.dumps(init_fn))
+        """
+        #test
+        with h5py.File(dataset_path, 'r') as f:
+            for i in range(n_test):
+                i=i % len(f['data'])
+                seed = test_start_seed + i
+                enable_render = i < n_test_vis
+                test_idx = 10 #train_start_idx + i
+                init_state = f[f'data/demo_{test_idx}/states'][0]
+                env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
+                ep_meta = f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None)
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
-        # env = SyncVectorEnv(env_fns)
+                def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
+                    enable_render=enable_render):
+                    # setup rendering
+                    # video_wrapper
+                    assert isinstance(env.env, VideoRecordingWrapper)
+                    env.env.video_recoder.stop()
+                    env.env.file_path = None
+                    if enable_render:
+                        filename = pathlib.Path(output_dir).joinpath(
+                            'testmedia', str(test_idx)+'_'+wv.util.generate_id() + ".mp4")
+                        filename.parent.mkdir(parents=False, exist_ok=True)
+                        filename = str(filename)
+                        env.env.file_path = filename
+
+                    # switch to init_state reset
+                    assert isinstance(env.env.env, RobomimicImageWrapper)
+                    env.env.env.init_state = init_state
+                    env.env.env.env_model = env_model
+                    env.env.env.ep_meta = ep_meta
+                    text = json.loads(ep_meta)['lang']
+                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                    # Encode the text using CLIP
+                    with torch.no_grad():
+                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                    env.env.env.language_goal = language_goal_embedding
+                    env.seed(seed)
+                    env.env.env.env.env.hard_reset=True
+                    env.env.env.reset()
+                    env.env.env.env.env.hard_reset=False
+
+                env_seeds.append(test_idx)
+                env_prefixs.append('test/')
+                env_init_fn_dills.append(dill.dumps(init_fn))
+
+        # env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        env = SyncVectorEnv(env_fns)
 
 
         self.env_meta = env_meta
@@ -308,10 +384,7 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    new_obs_dict = {}
-                    for k,v in obs_dict.items():
-                        new_obs_dict[k]=v[:,-2:]
-                    action_dict = policy.predict_action(new_obs_dict)
+                    action_dict = policy.predict_action(obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,

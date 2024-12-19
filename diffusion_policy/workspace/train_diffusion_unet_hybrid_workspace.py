@@ -362,13 +362,21 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                             step_log['val_loss'] = val_loss
 
                 def log_action_mse(step_log, category, pred_action, gt_action):
-                    B, T, _ = pred_action.shape
-                    pred_action = pred_action.view(B, T, -1, 10)
-                    gt_action = gt_action.view(B, T, -1, 10)
-                    step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action).item()
-                    step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3]).item()
-                    step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9]).item()
-                    step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9]).item()
+                    B, T, D = pred_action.shape
+                    if D==10:
+                        pred_action = pred_action.view(B, T, -1, 10)
+                        gt_action = gt_action.view(B, T, -1, 10)
+                        step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action).item()
+                        step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3]).item()
+                        step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9]).item()
+                        step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9]).item()
+                    elif D==7:
+                        pred_action = pred_action.view(B, T, -1, 7)
+                        gt_action = gt_action.view(B, T, -1, 7)
+                        step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action).item()
+                        step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3]).item()
+                        step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:6], gt_action[..., 3:6]).item()
+                        step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 6:], gt_action[..., 6:]).item()
                 # run diffusion sampling on a training batch
                 if (self.epoch % cfg.training.sample_every) == 0 and accelerator.is_main_process:
                     with torch.no_grad():

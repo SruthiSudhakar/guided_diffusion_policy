@@ -73,7 +73,6 @@ class MultiStepWrapper(gym.Wrapper):
             max_episode_steps=None,
             reward_agg_method='max'
         ):
-        n_obs_steps = 8
         super().__init__(env)
         self._action_space = repeated_space(env.action_space, n_action_steps)
         self._observation_space = repeated_space(env.observation_space, n_obs_steps)

@@ -4,7 +4,7 @@ import numba
 from diffusion_policy.common.replay_buffer import ReplayBuffer
 import os, imageio
 import pdb
-
+from termcolor import colored
 
 # @numba.jit(nopython=True)
 # def create_indices(
@@ -183,6 +183,8 @@ class SequenceSampler:
             if key=='success':
                 result[key] = np.array(self.replay_buffer[key][episode_idx])
             elif key=='object':
+                result[key] = np.array(self.replay_buffer[key][episode_idx])
+            elif key=='language_goal':
                 result[key] = np.array(self.replay_buffer[key][episode_idx])
             # elif key=='action' and self.collected_demos:
             #     input_arr = self.replay_buffer[key]

@@ -9,7 +9,7 @@
 # Lines = file1.readlines()
 
 # train_losses=[0]
-# global_step=[0]
+# epoch=[0]
 # train_guidance_grad_scaled=[0]
 # train_mse_losses=[0]
 # test_mean_scores=[0]
@@ -38,19 +38,19 @@
 #         else:
 #             train_guidance_grad_scaled.append(0)
 #             train_mse_losses.append(0)
-#         global_step.append(line['global_step'])
+#         epoch.append(line['epoch'])
 #         epoch.append(line['epoch'])
 #     except:
 #         train_losses.append(train_losses[-1])
 #         train_guidance_grad_scaled.append(line[-1])
 #         train_mse_losses.append(line[-1])
-#         global_step.append(global_step[-1])
+#         epoch.append(epoch[-1])
 #         epoch.append(epoch[-1])
 # train_losses=train_losses[1:]
 # train_guidance_grad_scaled=train_guidance_grad_scaled[1:]
 # train_mse_losses=train_mse_losses[1:]
 
-# global_step=global_step[1:]
+# epoch=epoch[1:]
 # epoch=epoch[1:]
 
 # fig, ax = plt.subplots()
@@ -103,6 +103,7 @@
 
 import json, sys
 import matplotlib.pyplot as plt
+print('hi there')
 file_path = sys.argv[1]
 
 # Lists to store the values
@@ -116,12 +117,12 @@ with open(file_path, "r") as file:
         try:
             # Parse the JSON data in the line
             data = json.loads(line)
-            # Append train_loss and global_step
+            # Append train_loss and epoch
             train_loss.append(data.get("train_loss"))
-            steps.append(data.get("global_step"))
+            steps.append(data.get("epoch"))
             # Append val_loss if it exists
             if "val_loss" in data:
-                val_loss.append((data["global_step"], data["val_loss"]))
+                val_loss.append((data["epoch"], data["val_loss"]))
         except json.JSONDecodeError:
             print(f"Skipping invalid line: {line}")
 

@@ -42,6 +42,15 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     )
     return env
 
+# def get_distinct_floorplan_and_style():
+#     return None
+
+from transformers import CLIPTokenizer, CLIPModel
+import torch
+# Load the CLIP model and tokenizer
+clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
+clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+clip_model = CLIPModel.from_pretrained(clip_model_name)
 
 class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
@@ -175,6 +184,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         # train
         with h5py.File(dataset_path, 'r') as f:
             for i in range(n_train):
+                i=i % len(f['data'])
                 train_idx = train_start_idx + i
                 enable_render = True
                 init_state = f[f'data/demo_{train_idx}/states'][0]
@@ -190,7 +200,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.file_path = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
-                            'trainmedia', str(train_idx) + ".mp4")
+                            'trainmedia', str(train_idx) + "_" + wv.util.generate_id() + ".mp4")
                         filename.parent.mkdir(parents=False, exist_ok=True)
                         filename = str(filename)
                         env.env.file_path = filename
@@ -200,6 +210,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.init_state = init_state
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
+                    text = json.loads(ep_meta)['lang']
+                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                    # Encode the text using CLIP
+                    with torch.no_grad():
+                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                    env.env.env.language_goal = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
                     env.env.env.env.env.hard_reset=False
@@ -208,33 +224,80 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
         
-        # test
-        for i in range(n_test):
-            seed = test_start_seed + i
-            enable_render = True
+        # # test
+        # for i in range(n_test):
+        #     seed = test_start_seed + i
+        #     enable_render = True
 
-            def init_fn(env, seed=seed, 
-                enable_render=enable_render):
-                # setup rendering
-                # video_wrapper
-                assert isinstance(env.env, VideoRecordingWrapper)
-                env.env.video_recoder.stop()
-                env.env.file_path = None
-                if enable_render:
-                    filename = pathlib.Path(output_dir).joinpath(
-                        'testmedia', str(i) + ".mp4")
-                    filename.parent.mkdir(parents=False, exist_ok=True)
-                    filename = str(filename)
-                    env.env.file_path = filename
+        #     def init_fn(env, seed=seed, 
+        #         enable_render=enable_render):
+        #         # setup rendering
+        #         # video_wrapper
+        #         assert isinstance(env.env, VideoRecordingWrapper)
+        #         env.env.video_recoder.stop()
+        #         env.env.file_path = None
+        #         if enable_render:
+        #             filename = pathlib.Path(output_dir).joinpath(
+        #                 'testmedia', str(i) + ".mp4")
+        #             filename.parent.mkdir(parents=False, exist_ok=True)
+        #             filename = str(filename)
+        #             env.env.file_path = filename
 
-                # switch to seed reset
-                assert isinstance(env.env.env, RobomimicImageWrapper)
-                env.env.env.init_state = None
-                env.seed(seed)
+        #         # switch to seed reset
+        #         assert isinstance(env.env.env, RobomimicImageWrapper)
+        #         env.env.env.init_state = None
+        #         env.seed(seed)
 
-            env_seeds.append(seed)
-            env_prefixs.append('test/')
-            env_init_fn_dills.append(dill.dumps(init_fn))
+        #     env_seeds.append(seed)
+        #     env_prefixs.append('test/')
+        #     env_init_fn_dills.append(dill.dumps(init_fn))
+        #test
+        with h5py.File(dataset_path, 'r') as f:
+            for i in range(n_test):
+                i=i % len(f['data'])
+                seed = test_start_seed + i
+                enable_render = i < n_test_vis
+                test_idx = train_start_idx + i
+                init_state = f[f'data/demo_{test_idx}/states'][0]
+                env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
+                ep_meta = json.loads(f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None))
+                if 'gen_textures' in ep_meta:
+                    ep_meta['gen_textures']={}
+                ep_meta = json.dumps(ep_meta)
+
+                def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
+                    enable_render=enable_render):
+                    # setup rendering
+                    # video_wrapper
+                    assert isinstance(env.env, VideoRecordingWrapper)
+                    env.env.video_recoder.stop()
+                    env.env.file_path = None
+                    if enable_render:
+                        filename = pathlib.Path(output_dir).joinpath(
+                            'testmedia', str(test_idx) + "_" + wv.util.generate_id() + ".mp4")
+                        filename.parent.mkdir(parents=False, exist_ok=True)
+                        filename = str(filename)
+                        env.env.file_path = filename
+
+                    # switch to init_state reset
+                    assert isinstance(env.env.env, RobomimicImageWrapper)
+                    env.env.env.init_state = init_state
+                    env.env.env.env_model = env_model
+                    env.env.env.ep_meta = ep_meta
+                    text = json.loads(ep_meta)['lang']
+                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                    # Encode the text using CLIP
+                    with torch.no_grad():
+                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                    env.env.env.language_goal = language_goal_embedding
+                    env.seed(seed)
+                    env.env.env.env.env.hard_reset=True
+                    env.env.env.reset()
+                    env.env.env.env.env.hard_reset=False
+
+                env_seeds.append(test_idx)
+                env_prefixs.append('test/')
+                env_init_fn_dills.append(dill.dumps(init_fn))
 
         env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
 
@@ -319,13 +382,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    new_obs_dict = {}
-                    for k,v in obs_dict.items():
-                        new_obs_dict[k]=v[:,-2:]
                     if classifier:
-                        action_dict = policy.predict_action(new_obs_dict, classifier, guidance_scale, guided_towards)
+                        action_dict = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards)
                     else:
-                        action_dict = policy.predict_action(new_obs_dict)
+                        action_dict = policy.predict_action(obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
@@ -340,6 +400,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 # step env
                 env_action = action
                 if self.abs_action:
+                    pdb.set_trace()
+                    print('UNDOING TRANSFORM ACTION')
                     env_action = self.undo_transform_action(action)
 
                 full_action = env_action#self.undo_transform_action(np_action_dict['action_pred'])
