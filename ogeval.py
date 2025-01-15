@@ -22,12 +22,35 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 \
                 --save
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.12.18/16.24.32_train_diffusion_unet_hybrid_robocasalang_PnPSinkToCounter/checkpoints/epoch=1000-val_loss=0.174.ckpt \
-                --device cuda:4 \
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.12.18/19.22.03_train_diffusion_unet_hybrid_robocasalang_PnPX/checkpoints/epoch=0450-val_loss=0.110.ckpt \
+                --device cuda:5 \
                 --robocasa \
-                --n_envs 1 \
-                --n_train 1 \
-                --n_test 1 
+                --change_test_textures \
+                --list_dataset_path PnPSinkToCounter_train \
+                --n_envs 100 \
+                --save 
+
+/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.01.13/17.21.57_train_diffusion_unet_hybrid_robocasalang_PnPX_trainsplit_imagenet_multigpu/checkpoints/epoch=0700-val_loss=0.222.ckpt
+
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.01.13/17.21.57_train_diffusion_unet_hybrid_robocasalang_PnPX_trainsplit_imagenet_multigpu/checkpoints/epoch=0400-val_loss=0.099.ckpt \
+                --device cuda:5 \
+                --robocasa \
+                --change_test_textures \
+                --list_dataset_path PnPStoveToCounter_train \
+                --n_envs 12 \
+                --n_train 6 \
+                --n_test 6
+                
+                 \
+                --save \
+
+python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.01.13/17.21.57_train_diffusion_unet_hybrid_robocasalang_PnPX_trainsplit_imagenet_multigpu/checkpoints/epoch=1200-val_loss=0.248.ckpt \
+                --device cuda:5 \
+                --robocasa \
+                --change_test_textures \
+                --list_dataset_path PnPSinkToCounter_train \
+                --n_envs 100
+                --save 
 """
 
 import sys
@@ -49,10 +72,10 @@ from omegaconf import OmegaConf,open_dict
 import datetime
 import yaml
 import h5py
-
+from data.dataset_registery import DATASETS
 @click.command()
 @click.option('-c', '--checkpoint', required=True)
-@click.option('-dataset_path', '--dataset_path', required=False)
+@click.option('-list_dataset_path', '--list_dataset_path', required=False)
 @click.option('-o', '--output_dir', required=False)
 @click.option('-classifier_dir', '--classifier_dir', required=False)
 @click.option('-guidance_scale', '--guidance_scale', required=False)
@@ -67,122 +90,142 @@ import h5py
 @click.option('-add', '--add', default='')
 @click.option('-save', '--save', is_flag=True)
 @click.option('-robocasa', '--robocasa', is_flag=True)
-def main(checkpoint, dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa):
-    if output_dir is None:
-        output_dir = checkpoint[:-5]+'/'  # Replace with your file path
+@click.option('-change_test_textures', '--change_test_textures', is_flag=True)
+@click.option('-change_test_objects', '--change_test_objects', is_flag=True)
+@click.option('-change_test_object_instances', '--change_test_object_instances', is_flag=True)
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances):
+    # Extract the value for task.dataset_path
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
     with open(yaml_file, 'r') as file:
-        data = yaml.safe_load(file)
+        train_overrides = yaml.safe_load(file)
     # Convert the list into a dictionary
     parsed_data = {}
-    for item in data:
+    for item in train_overrides:
         key, value = item.split('=', 1)
         parsed_data[key.strip()] = value.strip()
-    # Extract the value for task.dataset_path
-    dataset_path = parsed_data.get('task.dataset_path')
-    print("Value of task.dataset_path:", dataset_path)
-    if max_steps is None:
-        max_steps=0
-        data = h5py.File(dataset_path, 'r')
-        for i in data['data']:
-            max_steps = max(max_steps,data['data'][i]['actions'].shape[0])
-        max_steps+=50
-        print('max_steps',max_steps)
-        data.close()    
-    
-    current_time = datetime.datetime.now()
-    if classifier_dir:
-        output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
+    if list_dataset_path is None:
+        list_dataset_path = [parsed_data.get('task.dataset_path')]
+        print("Value of task.dataset_path:", list_dataset_path)
     else:
-        output_dir+=f'{add}alift_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
-    if os.path.exists(output_dir):
-        click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
-    pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
-    with open (output_dir+'/save_some_deets.txt', 'w') as f: 
-        deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', dataset_path, 'classifier_dir', classifier_dir, 'guidance_scale', guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, 'object',object, 'n_train', n_train, 'n_test', n_test, 'test_start_seed', test_start_seed]
-        deets = [str(x) for x in deets]
-        f.writelines("\n".join(deets))
+        list_dataset_path = DATASETS[list_dataset_path]
 
-    # load checkpoint
-    payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
-    cfg = payload['cfg']
-       
-    if robocasa:
-        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
-        cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
-    else:
-        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
-    
-    with open_dict(cfg):
-        cfg['task']['env_runner']['object'] = object
-        cfg['task']['env_runner']['save_stuff'] = save
+    for dataset_path in list_dataset_path:
+        output_dir = checkpoint[:-5]+'/'  # Replace with your file path
+        if max_steps is None:
+            max_steps=0
+            data = h5py.File(dataset_path, 'r')
+            for i in data['data']:
+                max_steps = max(max_steps,data['data'][i]['actions'].shape[0])
+            max_steps+=50
+            print('max_steps',max_steps)
+            data.close()    
+        
+        current_time = datetime.datetime.now()
+        task=''
+        for split in dataset_path.split('/'):
+            if 'PnP' in split:
+                task+=split
+        if classifier_dir:
+            output_dir+=f'{add}{task}_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}_guided_{guided_towards}_{guidance_scale}_seed_{test_start_seed}'
+        else:
+            output_dir+=f'{add}{task}_{object}_{current_time.month}_{current_time.day}_{current_time.hour}_{current_time.minute}_{current_time.second}'
+        if os.path.exists(output_dir):
+            click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
+        pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        with open (output_dir+'/save_some_deets.txt', 'w') as f: 
+            deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', \
+                dataset_path, 'classifier_dir', classifier_dir, 'guidance_scale', \
+                guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, \
+                'object',object, 'n_train', n_train, 'n_test', n_test, 'test_start_seed', \
+                test_start_seed, 'change_test_objects', change_test_objects, \
+                'change_test_textures', change_test_textures, 'change_test_object_instances', \
+                change_test_object_instances]
+            deets = [str(x) for x in deets]
+            f.writelines("\n".join(deets))
 
-    cfg['task']['dataset_path'] = dataset_path
-    cfg['task']['env_runner']['dataset_path'] = dataset_path
-    cfg['task']['dataset']['dataset_path'] = dataset_path
-    cfg['task']['env_runner']['max_steps'] = max_steps
-    cfg['task']['env_runner']['n_train'] = int(n_train)
-    cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-    cfg['task']['env_runner']['n_test'] = int(n_test)
-    cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-    cfg['task']['env_runner']['n_envs'] = int(n_envs)
-    if test_start_seed:
-        cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
+        # load checkpoint
+        payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
+        cfg = payload['cfg']
+        
+        if robocasa:
+            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
+            cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
+        else:
+            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
+        
+        with open_dict(cfg):
+            cfg['task']['env_runner']['object'] = object
+            cfg['task']['env_runner']['save_stuff'] = save
+            cfg['task']['env_runner']['change_test_textures']= change_test_textures
+            cfg['task']['env_runner']['change_test_objects']= change_test_objects
+            cfg['task']['env_runner']['change_test_object_instances']= change_test_object_instances
+
+        cfg['task']['dataset_path'] = dataset_path
+        cfg['task']['env_runner']['dataset_path'] = dataset_path
+        cfg['task']['dataset']['dataset_path'] = dataset_path
+        cfg['task']['env_runner']['max_steps'] = max_steps
+        cfg['task']['env_runner']['n_train'] = int(n_train)
+        cfg['task']['env_runner']['n_train_vis'] = int(n_train)
+        cfg['task']['env_runner']['n_test'] = int(n_test)
+        cfg['task']['env_runner']['n_test_vis'] = int(n_test)
+        cfg['task']['env_runner']['n_envs'] = int(n_envs)
+        if test_start_seed:
+            cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
 
 
-    cls = hydra.utils.get_class(cfg._target_)
-    workspace = cls(cfg, output_dir=output_dir)
-    workspace: BaseWorkspace
-    workspace.load_payload(payload, exclude_keys=None, include_keys=None)
-    
-    # get policy from workspace
-    policy = workspace.model
-    if cfg.training.use_ema:
-        policy = workspace.ema_model
-    
-    device = torch.device(device)
-    policy.to(device)
-    policy.eval()
-    
-    if classifier_dir:
-        classifier_payload = torch.load(open(classifier_dir+'.ckpt', 'rb'), pickle_module=dill)
-        classifier_cfg = classifier_payload['cfg']
-        classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
-
-        classifier_workspace = classifier_cls(classifier_cfg, output_dir=classifier_dir)
-        classifier_workspace: BaseWorkspace
-        classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
+        cls = hydra.utils.get_class(cfg._target_)
+        workspace = cls(cfg, output_dir=output_dir)
+        workspace: BaseWorkspace
+        workspace.load_payload(payload, exclude_keys=None, include_keys=None)
         
         # get policy from workspace
-        classifier_policy = classifier_workspace.model    
-        classifier_policy.to(device)
-        classifier_policy.eval()
+        policy = workspace.model
+        if cfg.training.use_ema:
+            policy = workspace.ema_model
         
-        # run eval
-        env_runner = hydra.utils.instantiate(
-            cfg.task.env_runner,
-            output_dir=output_dir)
-        if isinstance(guidance_scale, str):
-            runner_log= env_runner.run(policy, classifier_policy, guidance_scale, float(guided_towards))
-        else:
-            runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
-    else:
-        # run eval
-        env_runner = hydra.utils.instantiate(
-            cfg.task.env_runner,
-            output_dir=output_dir)
-        runner_log= env_runner.run(policy)
+        device = torch.device(device)
+        policy.to(device)
+        policy.eval()
+        
+        if classifier_dir:
+            classifier_payload = torch.load(open(classifier_dir+'.ckpt', 'rb'), pickle_module=dill)
+            classifier_cfg = classifier_payload['cfg']
+            classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
 
-    # dump log to json
-    json_log = dict()
-    for key, value in runner_log.items():
-        if isinstance(value, wandb.sdk.data_types.video.Video):
-            json_log[key] = value._path
+            classifier_workspace = classifier_cls(classifier_cfg, output_dir=classifier_dir)
+            classifier_workspace: BaseWorkspace
+            classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
+            
+            # get policy from workspace
+            classifier_policy = classifier_workspace.model    
+            classifier_policy.to(device)
+            classifier_policy.eval()
+            
+            # run eval
+            env_runner = hydra.utils.instantiate(
+                cfg.task.env_runner,
+                output_dir=output_dir)
+            if isinstance(guidance_scale, str):
+                runner_log= env_runner.run(policy, classifier_policy, guidance_scale, float(guided_towards))
+            else:
+                runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
         else:
-            json_log[key] = str(value)
-    out_path = os.path.join(output_dir, 'eval_log.json')
-    json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
+            # run eval
+            env_runner = hydra.utils.instantiate(
+                cfg.task.env_runner,
+                output_dir=output_dir)
+            runner_log= env_runner.run(policy)
+
+        # dump log to json
+        json_log = dict()
+        for key, value in runner_log.items():
+            if isinstance(value, wandb.sdk.data_types.video.Video):
+                json_log[key] = value._path
+            else:
+                json_log[key] = str(value)
+        out_path = os.path.join(output_dir, 'eval_log.json')
+        json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
 
 if __name__ == '__main__':
     main()

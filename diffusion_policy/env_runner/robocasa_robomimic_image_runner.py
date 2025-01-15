@@ -187,6 +187,11 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                 init_state = f[f'data/demo_{train_idx}/states'][0]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
+                text = json.loads(ep_meta)['lang']
+                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                # Encode the text using CLIP
+                with torch.no_grad():
+                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -207,11 +212,6 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                     env.env.env.init_state = init_state
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
-                    text = json.loads(ep_meta)['lang']
-                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                    # Encode the text using CLIP
-                    with torch.no_grad():
-                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
                     env.env.env.language_goal = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
@@ -273,6 +273,11 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                 init_state = f[f'data/demo_{test_idx}/states'][0]
                 env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None)
+                text = json.loads(ep_meta)['lang']
+                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                # Encode the text using CLIP
+                with torch.no_grad():
+                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -293,11 +298,6 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                     env.env.env.init_state = init_state
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
-                    text = json.loads(ep_meta)['lang']
-                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                    # Encode the text using CLIP
-                    with torch.no_grad():
-                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
                     env.env.env.language_goal = language_goal_embedding
                     env.seed(seed)
                     env.env.env.env.env.hard_reset=True
@@ -308,8 +308,8 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
                 env_prefixs.append('test/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
 
-        # env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
-        env = SyncVectorEnv(env_fns)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
+        # env = SyncVectorEnv(env_fns)
 
 
         self.env_meta = env_meta

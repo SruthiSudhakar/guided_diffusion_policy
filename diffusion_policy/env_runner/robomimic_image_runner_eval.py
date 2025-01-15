@@ -281,7 +281,7 @@ class RobomimicImageRunnerEval(BaseImageRunner):
 
             # start rollout
             obs = env.reset()
-            added_state = env.call('get_reset_states')
+            added_state = env.call('get_env_state')
 
             past_action = None
             policy.reset()

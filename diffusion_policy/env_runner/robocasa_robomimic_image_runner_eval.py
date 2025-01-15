@@ -26,6 +26,7 @@ import robomimic.utils.obs_utils as ObsUtils
 from lovely_numpy import lo
 import pdb, json
 from termcolor import colored
+from robocasa.models.objects.kitchen_objects import OBJ_CATEGORIES, OBJ_GROUPS
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
@@ -79,8 +80,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             n_envs=None,
             object=None,
             save_stuff=False,
+            change_test_textures=False,
+            change_test_objects=False,
+            change_test_object_instances=False,
         ):
         super().__init__(output_dir)
+        n_obs_steps=8 if save_stuff else n_obs_steps
         self.object = object
         if n_envs is None:
             n_envs = n_train + n_test
@@ -190,6 +195,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 init_state = f[f'data/demo_{train_idx}/states'][0]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
+                text = json.loads(ep_meta)['lang']
+                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                # Encode the text using CLIP
+                with torch.no_grad():
+                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -198,6 +208,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     assert isinstance(env.env, VideoRecordingWrapper)
                     env.env.video_recoder.stop()
                     env.env.file_path = None
+                    env.env.env.init_state = None
+                    env.env.env.env_model = None
+                    env.env.env.ep_meta = None
+                    env.env.env.language_goal = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
                             'trainmedia', str(train_idx) + "_" + wv.util.generate_id() + ".mp4")
@@ -210,11 +224,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.init_state = init_state
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
-                    text = json.loads(ep_meta)['lang']
-                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                    # Encode the text using CLIP
-                    with torch.no_grad():
-                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
                     env.env.env.language_goal = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
@@ -223,34 +232,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 env_seeds.append(train_idx)
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
-        
-        # # test
-        # for i in range(n_test):
-        #     seed = test_start_seed + i
-        #     enable_render = True
-
-        #     def init_fn(env, seed=seed, 
-        #         enable_render=enable_render):
-        #         # setup rendering
-        #         # video_wrapper
-        #         assert isinstance(env.env, VideoRecordingWrapper)
-        #         env.env.video_recoder.stop()
-        #         env.env.file_path = None
-        #         if enable_render:
-        #             filename = pathlib.Path(output_dir).joinpath(
-        #                 'testmedia', str(i) + ".mp4")
-        #             filename.parent.mkdir(parents=False, exist_ok=True)
-        #             filename = str(filename)
-        #             env.env.file_path = filename
-
-        #         # switch to seed reset
-        #         assert isinstance(env.env.env, RobomimicImageWrapper)
-        #         env.env.env.init_state = None
-        #         env.seed(seed)
-
-        #     env_seeds.append(seed)
-        #     env_prefixs.append('test/')
-        #     env_init_fn_dills.append(dill.dumps(init_fn))
         #test
         with h5py.File(dataset_path, 'r') as f:
             for i in range(n_test):
@@ -261,9 +242,43 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 init_state = f[f'data/demo_{test_idx}/states'][0]
                 env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
                 ep_meta = json.loads(f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None))
-                if 'gen_textures' in ep_meta:
-                    ep_meta['gen_textures']={}
+                if change_test_textures:
+                    if 'gen_textures' in ep_meta:
+                        ep_meta['gen_textures']={}
+                if change_test_objects:
+                    for obj in ep_meta['object_cfgs']:
+                        if obj['name']=='obj':
+                            temp_obj_info = obj.pop('info',None)
+                            obj.pop('cookable',None)
+                            obj.pop('microwavable',None)
+                            obj.pop('washable',None)
+                            obj.pop('freezable',None)
+                            env_name=env_meta["env_name"]
+                            obj['exclude_obj_groups']=f"{env_name}_seen"
+                            print('replacing',  temp_obj_info['cat'],'excluding these groups: ', f"{env_name}_seen")
+                            # new_object = OBJ_GROUPS[f"{env_name}_unseen"][obj['info']['cat']]
+                            # obj['info']['mjcf_path'] = new_object
+                            # obj['info']['cat'] = new_object.split('/')[-3]
+                            # print('replacing',obj['info']['cat']  ,'with',new_object)
+
+                if change_test_object_instances:
+                    for obj in ep_meta['object_cfgs']:
+                        if obj['name']=='obj':
+                            temp_info = obj.pop('info',None)
+                            obj['split']='B'
+                            obj['obj_groups']=temp_info['cat']
+                            # pdb.set_trace()
+                            # print('replacing with new instance',temp_info['cat'] )
+
                 ep_meta = json.dumps(ep_meta)
+
+                text = json.loads(ep_meta)['lang']
+                # if change_test_objects:
+                #     text.replace(obj['info']['cat'],new_object.split('/')[-3])
+                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
+                # Encode the text using CLIP
+                with torch.no_grad():
+                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -272,6 +287,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     assert isinstance(env.env, VideoRecordingWrapper)
                     env.env.video_recoder.stop()
                     env.env.file_path = None
+                    env.env.env.init_state = None
+                    env.env.env.env_model = None
+                    env.env.env.ep_meta = None
+                    env.env.env.language_goal = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
                             'testmedia', str(test_idx) + "_" + wv.util.generate_id() + ".mp4")
@@ -282,17 +301,15 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     # switch to init_state reset
                     assert isinstance(env.env.env, RobomimicImageWrapper)
                     env.env.env.init_state = init_state
-                    env.env.env.env_model = env_model
+                    if not change_test_objects and not change_test_object_instances:
+                        env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
-                    text = json.loads(ep_meta)['lang']
-                    inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                    # Encode the text using CLIP
-                    with torch.no_grad():
-                        language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
                     env.env.env.language_goal = language_goal_embedding
                     env.seed(seed)
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
+                    # if change_test_textures:
+                    #     print('set the textures so it doesnt change going forwards')
                     env.env.env.env.env.hard_reset=False
 
                 env_seeds.append(test_idx)
@@ -302,6 +319,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
 
         # env = SyncVectorEnv(env_fns)
+
+        if save_stuff:
+            self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
+            self.datagrp =  self.data_file.create_group('data')
+            self.datagrp.attrs['ogdataset'] = self.output_dir
+            self.datagrp.attrs['env_args'] = json.dumps(env_meta)
 
 
         self.env_meta = env_meta
@@ -334,9 +357,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         # print('N STUFF', n_envs, n_inits, n_chunks)
 
         # allocate data
+        all_objects = [None] * n_inits
         all_video_paths = [None] * n_inits
         all_rewards = [None] * n_inits
 
+        demo_number = -1
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
             end = min(n_inits, start + n_envs)
@@ -356,8 +381,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
             # start rollout
             obs = env.reset()
-            added_state = env.call('get_reset_states')
-
+            added_state = env.call('get_env_state')
             past_action = None
             policy.reset()
 
@@ -404,8 +428,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     print('UNDOING TRANSFORM ACTION')
                     env_action = self.undo_transform_action(action)
 
-                full_action = env_action#self.undo_transform_action(np_action_dict['action_pred'])
-
                 # print('INDEX:', env_step_index)
                 # if chunk_idx == n_chunks - 1:
                 #     pdb.set_trace()
@@ -415,59 +437,87 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 add_on = np.tile([0., -0.,  0.,  0., -1.], (env_action.shape[0], env_action.shape[1], 1))
                 extended_env_action = np.concatenate((env_action, add_on), axis=-1)
                 obs, reward, done, info = env.step(extended_env_action)
-                
 
                 # env_step_index+=1
                 if self.save_stuff:
-                    print('MORE SAVING STUFF')
-                    if 'save_rollout_obsdict_agentview_images' not in locals():
-                        save_rollout_obsdict_agentview_images = np.expand_dims(np_obs_dict['agentview_image'],0)
+                    if 'save_rollout_obsdict_robot0_agentview_right_image' not in locals():
+                        save_rollout_obsdict_robot0_agentview_right_image = np.expand_dims(np_obs_dict['robot0_agentview_right_image'],0)
+                        save_rollout_obsdict_robot0_agentview_left_image = np.expand_dims(np_obs_dict['robot0_agentview_left_image'],0)
                         save_rollout_obsdict_eyeinhand_images = np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)
                         save_rollout_obsdict_robot0s = np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)
-                        save_rollout_actions = np.expand_dims(full_action,0)
+                        save_rollout_actions = np.expand_dims(extended_env_action,0)
                     else:
-                        save_rollout_obsdict_agentview_images = np.vstack((save_rollout_obsdict_agentview_images,np.expand_dims(np_obs_dict['agentview_image'],0)))
+                        save_rollout_obsdict_robot0_agentview_right_image = np.vstack((save_rollout_obsdict_robot0_agentview_right_image,np.expand_dims(np_obs_dict['robot0_agentview_right_image'],0)))
+                        save_rollout_obsdict_robot0_agentview_left_image = np.vstack((save_rollout_obsdict_robot0_agentview_left_image,np.expand_dims(np_obs_dict['robot0_agentview_left_image'],0)))
                         save_rollout_obsdict_eyeinhand_images = np.vstack((save_rollout_obsdict_eyeinhand_images,np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)))
                         save_rollout_obsdict_robot0s = np.vstack((save_rollout_obsdict_robot0s,np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)))
-                        save_rollout_actions = np.vstack((save_rollout_actions,np.expand_dims(full_action,0)))
+                        save_rollout_actions = np.vstack((save_rollout_actions,np.expand_dims(extended_env_action,0)))
 
                 done = np.all(done)
                 past_action = action
 
                 # update pbar
-                pbar.update(full_action.shape[1])
+                pbar.update(extended_env_action.shape[1])
             pbar.close()
-
-            if self.save_stuff:
-                print('MORE SAVING STUFF')
-                if 'all_save_rollout_obsdict_agentview_images' not in locals():
-                    all_save_rollout_obsdict_agentview_images = np.array(save_rollout_obsdict_agentview_images)
-                    all_save_rollout_obsdict_eyeinhand_images = np.array(save_rollout_obsdict_eyeinhand_images)
-                    all_save_rollout_obsdict_robot0s = np.array(save_rollout_obsdict_robot0s)
-                    all_save_rollout_actions = np.array(save_rollout_actions)
-                    all_save_grasping = np.array(env.call('is_grasping')) 
-                    all_save_reward = np.array(env.call('get_rewards'))
-                else:
-                    all_save_rollout_obsdict_agentview_images = np.concatenate((all_save_rollout_obsdict_agentview_images, np.array(save_rollout_obsdict_agentview_images)), axis=1)
-                    all_save_rollout_obsdict_eyeinhand_images = np.concatenate((all_save_rollout_obsdict_eyeinhand_images, np.array(save_rollout_obsdict_eyeinhand_images)), axis=1)
-                    all_save_rollout_obsdict_robot0s = np.concatenate((all_save_rollout_obsdict_robot0s, np.array(save_rollout_obsdict_robot0s)), axis=1)
-                    all_save_rollout_actions = np.concatenate((all_save_rollout_actions, np.array(save_rollout_actions)), axis=1)
-                    all_save_grasping = np.concatenate((all_save_grasping, np.array(env.call('is_grasping'))), axis=0)
-                    all_save_reward = np.concatenate((all_save_reward, np.array(env.call('get_rewards'))), axis=0)
-                if 'all_added_states' in locals():
-                    all_added_states = np.vstack((all_added_states, np.array(added_state)))
-                elif 'added_state' in locals():
-                    all_added_states = np.array(added_state)
-                del save_rollout_obsdict_agentview_images
-                del save_rollout_obsdict_eyeinhand_images
-                del save_rollout_obsdict_robot0s
-                del save_rollout_actions
-                if 'added_state' in locals():
-                    del added_state
 
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
+            all_objects[this_global_slice] = env.call('get_env_metadata')[this_local_slice]
             all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
+
+            if self.save_stuff:
+                print('MORE SAVING STUFF')
+                #Ep meta
+                for index,one_env in enumerate(all_objects[this_global_slice]):
+                    demo_number+=1
+                    demogrp = self.datagrp.create_group('demo_'+str(demo_number))
+                    demogrp.attrs['file_path']=all_video_paths[demo_number]
+                    demogrp.attrs['ep_meta'] = one_env['ep_meta']
+                    demogrp.attrs['model_file'] = one_env['env_model']
+                    demogrp.create_dataset('actions', data = save_rollout_actions[:,index].reshape(-1, *save_rollout_actions[:,index].shape[2:]))
+                    demogrp.create_dataset('rewards', data = np.array(env.call('get_rewards')[index]))
+                    demogrp.create_dataset('grasping', data = np.array(env.call('is_grasping')[index]))
+                    demogrp.create_dataset('states', data = np.expand_dims(np.array(added_state[index]),0))
+                    obsgrp = demogrp.create_group('obs') 
+                    obsgrp.create_dataset('robot0_agentview_left_image', data = (save_rollout_obsdict_robot0_agentview_left_image[:,index].reshape(-1,*save_rollout_obsdict_robot0_agentview_left_image[:,index].shape[2:])* 255.0).astype(np.uint8).transpose(0,2,3,1))
+                    obsgrp.create_dataset('robot0_agentview_right_image', data = (save_rollout_obsdict_robot0_agentview_right_image[:,index].reshape(-1,*save_rollout_obsdict_robot0_agentview_right_image[:,index].shape[2:])* 255.0).astype(np.uint8).transpose(0,2,3,1))
+                    obsgrp.create_dataset('robot0_eye_in_hand_image', data = (save_rollout_obsdict_eyeinhand_images[:,index].reshape(-1,*save_rollout_obsdict_eyeinhand_images[:,index].shape[2:])* 255.0).astype(np.uint8).transpose(0,2,3,1))
+                    obsgrp.create_dataset('robot0_eef_pos', data = save_rollout_obsdict_robot0s[:,index,:,:3].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,:3].shape[2:]))
+                    obsgrp.create_dataset('robot0_eef_quat', data = save_rollout_obsdict_robot0s[:,index,:,3:7].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,3:7].shape[2:]))
+                    obsgrp.create_dataset('robot0_gripper_qpos', data = save_rollout_obsdict_robot0s[:,index,:,7:].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,7:].shape[2:]))
+                    # actiondictgrp = demogrp.create_group('action_dict') 
+                    # for grp_name in current_dataset['data'][demo]['action_dict']:
+                    #     dset = actiondictgrp.create_dataset(grp_name, data = current_dataset['data'][demo]['action_dict'][grp_name])
+
+                # if 'all_save_rollout_obsdict_robot0_agentview_right_image' not in locals():
+                    # all_save_rollout_obsdict_robot0_agentview_right_image = np.array(save_rollout_obsdict_robot0_agentview_right_image)
+                    # all_save_rollout_obsdict_robot0_agentview_left_image = np.array(save_rollout_obsdict_robot0_agentview_left_image)
+                    # all_save_rollout_obsdict_eyeinhand_images = np.array(save_rollout_obsdict_eyeinhand_images)
+                    # all_save_rollout_obsdict_robot0s = np.array(save_rollout_obsdict_robot0s)
+                    # all_save_rollout_actions = np.array(save_rollout_actions)
+                    # all_save_grasping = np.array(env.call('is_grasping')) 
+                    # all_save_reward = np.array(env.call('get_rewards'))
+                # else:
+                #     all_save_rollout_obsdict_robot0_agentview_right_image = np.concatenate((all_save_rollout_obsdict_robot0_agentview_right_image, np.array(save_rollout_obsdict_robot0_agentview_right_image)), axis=1)
+                #     all_save_rollout_obsdict_robot0_agentview_left_image = np.concatenate((all_save_rollout_obsdict_robot0_agentview_left_image, np.array(save_rollout_obsdict_robot0_agentview_left_image)), axis=1)
+                #     all_save_rollout_obsdict_eyeinhand_images = np.concatenate((all_save_rollout_obsdict_eyeinhand_images, np.array(save_rollout_obsdict_eyeinhand_images)), axis=1)
+                #     all_save_rollout_obsdict_robot0s = np.concatenate((all_save_rollout_obsdict_robot0s, np.array(save_rollout_obsdict_robot0s)), axis=1)
+                #     all_save_rollout_actions = np.concatenate((all_save_rollout_actions, np.array(save_rollout_actions)), axis=1)
+                #     all_save_grasping = np.concatenate((all_save_grasping, np.array(env.call('is_grasping'))), axis=0)
+                #     all_save_reward = np.concatenate((all_save_reward, np.array(env.call('get_rewards'))), axis=0)
+                # if 'all_added_states' in locals():
+                #     all_added_states = np.vstack((all_added_states, np.array(added_state)))
+                # else:# 'added_state' in locals():
+                #     all_added_states = np.array(added_state)
+                #     del added_state
+                #     print('SAVING THINGS')
+                del save_rollout_obsdict_robot0_agentview_right_image
+                del save_rollout_obsdict_robot0_agentview_left_image
+                del save_rollout_obsdict_eyeinhand_images
+                del save_rollout_obsdict_robot0s
+                del save_rollout_actions
+                del added_state
+
         # clear out video buffer
         _ = env.reset()
         
@@ -488,7 +538,13 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             max_reward = np.max(all_rewards[i])
             max_rewards[prefix].append(max_reward)
             log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
-
+            try:
+                object_cfgs=json.loads(all_objects[i]['ep_meta'])['object_cfgs']
+            except:
+                print('HOLD UP could not save object info')
+            for obj in object_cfgs:
+                if obj['name']=='obj':
+                    log_data[prefix+f'object_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
             # visualize sim
             video_path = all_video_paths[i]
             if video_path is not None:
@@ -502,15 +558,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             log_data[name] = value
 
         if self.save_stuff:
-            print('MORE SAVING STUFF')
-            np.save(self.output_dir+'/obsdict_agentview.npy', all_save_rollout_obsdict_agentview_images)
-            np.save(self.output_dir+'/obsdict_eyeinhand.npy', all_save_rollout_obsdict_eyeinhand_images)
-            np.save(self.output_dir+'/obsdict_robot0s.npy', all_save_rollout_obsdict_robot0s)
-            np.save(self.output_dir+'/actions.npy', all_save_rollout_actions)
-            np.save(self.output_dir+'/rewards.npy', all_save_reward)
-            np.save(self.output_dir+'/grasping.npy', all_save_grasping)
-            if 'all_added_states' in locals():
-                np.save(self.output_dir+'/startstates.npy', all_added_states)
+            self.data_file.close()
 
         return log_data
 

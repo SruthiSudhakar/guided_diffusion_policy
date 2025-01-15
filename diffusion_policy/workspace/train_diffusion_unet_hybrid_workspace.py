@@ -106,14 +106,14 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
-        accelerator = Accelerator()#og_with='wandb')
-        # wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
-        # wandb_cfg.pop('project')
-        # accelerator.init_trackers(
-        #     project_name=cfg.logging.project,
-        #     config=OmegaConf.to_container(cfg, resolve=True),
-        #     init_kwargs={"wandb": wandb_cfg}
-        # )
+        accelerator = Accelerator(log_with='wandb')
+        wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
+        wandb_cfg.pop('project')
+        accelerator.init_trackers(
+            project_name=cfg.logging.project,
+            config=OmegaConf.to_container(cfg, resolve=True),
+            init_kwargs={"wandb": wandb_cfg}
+        )
 
         # resume training
         if cfg.training.resume:
@@ -189,12 +189,13 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 cfg.ema,
                 model=self.ema_model)
 
-        # configure env
-        env_runner: BaseImageRunner
-        env_runner = hydra.utils.instantiate(
-            cfg.task.env_runner,
-            output_dir=self.output_dir)
-        assert isinstance(env_runner, BaseImageRunner)
+        if accelerator.is_main_process:
+            # configure env
+            env_runner: BaseImageRunner
+            env_runner = hydra.utils.instantiate(
+                cfg.task.env_runner,
+                output_dir=self.output_dir)
+            assert isinstance(env_runner, BaseImageRunner)
 
         # # configure logging
         # wandb_run = wandb.init(
@@ -245,6 +246,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
             cfg.training.checkpoint_every = 1
             cfg.training.val_every = 1
             cfg.training.sample_every = 1
+            cfg.env_runner.max_steps = 10
 
         # training loop
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
@@ -338,7 +340,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 policy.eval()
 
                 # run rollout
-                if (self.epoch % cfg.training.rollout_every) == 0:
+                if (self.epoch % cfg.training.rollout_every)==0 and accelerator.is_main_process:
                     runner_log = env_runner.run(policy)
                     # log all
                     step_log.update(runner_log)
@@ -351,7 +353,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                                 leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                             for batch_idx, batch in enumerate(tepoch):
                                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
-                                loss = self.model.compute_loss(batch)
+                                loss = accelerator.unwrap_model(self.model).compute_loss(batch)
                                 val_losses.append(loss)
                                 if (cfg.training.max_val_steps is not None) \
                                     and batch_idx >= (cfg.training.max_val_steps-1):
@@ -399,6 +401,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                 
                 # checkpoint
                 if (self.epoch % cfg.training.checkpoint_every) == 0 and accelerator.is_main_process:
+                    print('accelerator.is_main_process')
                     # unwrap the model to save ckpt
                     model_ddp = self.model
                     self.model = accelerator.unwrap_model(self.model)

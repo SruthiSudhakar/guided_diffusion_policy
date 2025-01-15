@@ -3,10 +3,10 @@ checkpoint:
   save_last_ckpt: true
   save_last_snapshot: false
   topk:
-    format_str: epoch={epoch:04d}-valid_accuracy={valid_accuracy:.3f}.ckpt
+    format_str: epoch={epoch:04d}-val_loss={val_loss:.3f}.ckpt
     k: 50
-    mode: max
-    monitor_key: valid_accuracy
+    mode: min
+    monitor_key: val_loss
 dataloader:
   batch_size: 1024
   num_workers: 8
@@ -28,16 +28,16 @@ logging:
   group: null
   id: ${now:%Y.%m.%d.%H.%M.%S}_train_classifier
   mode: online
-  name: ${now:%Y.%m.%d.%H.%M.%S}_train_classifier
+  name: train_classifier
   project: diffusion_policy_debug
-  resume: true
+  resume: false
   tags:
   - train_classifier
   - square_image
   - default
 multi_run:
-  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_classifier
-  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}_classifier
+  run_dir: data/outputs/2025.01/train_classifier
+  wandb_name_base: train_classifier
 n_action_steps: 8
 n_latency_steps: 0
 n_obs_steps: 2
@@ -82,13 +82,28 @@ policy:
   shape_meta:
     action:
       shape:
-      - 10
+      - 7
     obs:
-      agentview_image:
+      language_goal:
+        shape:
+        - 512
+      robot0_eye_in_hand_image:
         shape:
         - 3
-        - 84
-        - 84
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_right_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_left_image:
+        shape:
+        - 3
+        - 128
+        - 128
         type: rgb
       robot0_eef_pos:
         shape:
@@ -96,25 +111,34 @@ policy:
       robot0_eef_quat:
         shape:
         - 4
-      robot0_eye_in_hand_image:
-        shape:
-        - 3
-        - 84
-        - 84
-        type: rgb
       robot0_gripper_qpos:
         shape:
         - 2
 shape_meta:
   action:
     shape:
-    - 10
+    - 7
   obs:
-    agentview_image:
+    language_goal:
+      shape:
+      - 512
+    robot0_eye_in_hand_image:
       shape:
       - 3
-      - 84
-      - 84
+      - 128
+      - 128
+      type: rgb
+    robot0_agentview_right_image:
+      shape:
+      - 3
+      - 128
+      - 128
+      type: rgb
+    robot0_agentview_left_image:
+      shape:
+      - 3
+      - 128
+      - 128
       type: rgb
     robot0_eef_pos:
       shape:
@@ -122,21 +146,15 @@ shape_meta:
     robot0_eef_quat:
       shape:
       - 4
-    robot0_eye_in_hand_image:
-      shape:
-      - 3
-      - 84
-      - 84
-      type: rgb
     robot0_gripper_qpos:
       shape:
       - 2
 task:
-  abs_action: true
+  abs_action: false
   balance_dataset: false
   dataset:
     _target_: diffusion_policy.dataset.robomimic_replay_image_dataset.RobomimicReplayImageDataset
-    abs_action: true
+    abs_action: false
     dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
     horizon: 16
     n_obs_steps: 2
@@ -147,13 +165,28 @@ task:
     shape_meta:
       action:
         shape:
-        - 10
+        - 7
       obs:
-        agentview_image:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
           shape:
           - 3
-          - 84
-          - 84
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
           type: rgb
         robot0_eef_pos:
           shape:
@@ -161,12 +194,6 @@ task:
         robot0_eef_quat:
           shape:
           - 4
-        robot0_eye_in_hand_image:
-          shape:
-          - 3
-          - 84
-          - 84
-          type: rgb
         robot0_gripper_qpos:
           shape:
           - 2
@@ -178,13 +205,28 @@ task:
   shape_meta:
     action:
       shape:
-      - 10
+      - 7
     obs:
-      agentview_image:
+      language_goal:
+        shape:
+        - 512
+      robot0_eye_in_hand_image:
         shape:
         - 3
-        - 84
-        - 84
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_right_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_left_image:
+        shape:
+        - 3
+        - 128
+        - 128
         type: rgb
       robot0_eef_pos:
         shape:
@@ -192,12 +234,6 @@ task:
       robot0_eef_quat:
         shape:
         - 4
-      robot0_eye_in_hand_image:
-        shape:
-        - 3
-        - 84
-        - 84
-        type: rgb
       robot0_gripper_qpos:
         shape:
         - 2

@@ -4,7 +4,7 @@ from copy import deepcopy
 from gym import logger
 from gym.vector.vector_env import VectorEnv
 from gym.vector.utils import concatenate, create_empty_array
-
+import pdb
 __all__ = ["SyncVectorEnv"]
 
 
@@ -30,7 +30,6 @@ class SyncVectorEnv(VectorEnv):
         self.envs = [env_fn() for env_fn in env_fns]
         self.copy = copy
         self.metadata = self.envs[0].metadata
-
         if (observation_space is None) or (action_space is None):
             observation_space = observation_space or self.envs[0].observation_space
             action_space = action_space or self.envs[0].action_space
@@ -66,6 +65,7 @@ class SyncVectorEnv(VectorEnv):
         for env in self.envs:
             observation = env.reset()
             observations.append(observation)
+        # pdb.set_trace()
         self.observations = concatenate(
             observations, self.observations, self.single_observation_space
         )
@@ -83,6 +83,7 @@ class SyncVectorEnv(VectorEnv):
             #     observation = env.reset()
             observations.append(observation)
             infos.append(info)
+        # pdb.set_trace()
         self.observations = concatenate(
             observations, self.observations, self.single_observation_space
         )

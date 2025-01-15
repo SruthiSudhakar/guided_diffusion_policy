@@ -6,7 +6,8 @@ from gym import spaces
 from omegaconf import OmegaConf
 from robomimic.envs.env_robosuite import EnvRobosuite
 import pdb
-
+from termcolor import colored
+import json
 class RobomimicImageWrapper(gym.Env):
     def __init__(self, 
         env: EnvRobosuite,
@@ -100,6 +101,10 @@ class RobomimicImageWrapper(gym.Env):
             # to be compatible with gym
             if self.env_model and self.ep_meta:
                 raw_obs = self.env.reset_to({'states': self.init_state, "model": self.env_model, "ep_meta": self.ep_meta})
+            elif self.ep_meta:
+                raw_obs = self.env.reset_to({'states': self.init_state, "ep_meta": self.ep_meta})
+                self.ep_meta = json.dumps(self.env.env._ep_meta)
+                self.env_model = self.env.env.sim.model.get_xml()
             else:
                 raw_obs = self.env.reset_to({'states': self.init_state})
         elif self._seed is not None:
@@ -148,7 +153,10 @@ class RobomimicImageWrapper(gym.Env):
         check_grasp = False #self.env.env._check_grasp(gripper=self.env.env.robots[0].gripper, object_geoms=self.env.env.cube)
         return check_grasp
 
-    def get_reset_states(self):
+    def get_env_metadata(self):
+        return dict(ep_meta=self.ep_meta, env_model=self.env_model, init_state=self.init_state)
+
+    def get_env_state(self):
         return self.env.get_state()['states']
 
 def test():

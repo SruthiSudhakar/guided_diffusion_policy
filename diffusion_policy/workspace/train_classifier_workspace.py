@@ -152,25 +152,35 @@ class TrainClassifierWorkspace(BaseWorkspace):
     def run(self):
         cfg = copy.deepcopy(self.cfg)
 
-        accelerator = Accelerator()
-        # wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
-        # wandb_cfg.pop('project')
-        # accelerator.init_trackers(
-        #     project_name=cfg.logging.project,
-        #     config=OmegaConf.to_container(cfg, resolve=True),
-        #     init_kwargs={"wandb": wandb_cfg}
-        # )
+        accelerator = Accelerator(log_with='wandb')
+        wandb_cfg = OmegaConf.to_container(cfg.logging, resolve=True)
+        wandb_cfg.pop('project')
+        accelerator.init_trackers(
+            project_name=cfg.logging.project,
+            config=OmegaConf.to_container(cfg, resolve=True),
+            init_kwargs={"wandb": wandb_cfg}
+        )
 
         # resume training
         if cfg.training.resume:
-            lastest_ckpt_path = self.get_checkpoint_path()
-            if lastest_ckpt_path.is_file():
-                accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
-                self.load_checkpoint(path=lastest_ckpt_path)
+            lastest_ckpt_path = cfg.training.resume #self.get_checkpoint_path()
+            # if lastest_ckpt_path.is_file():
+                # accelerator.print(f"Resuming from checkpoint {lastest_ckpt_path}")
+                # self.load_checkpoint(path=lastest_ckpt_path)
+            try:
+                accelerator.print(f"Resuming from checkpoint {latest_ckpt_path}")
+                self.load_checkpoint(path=latest_ckpt_path)
+                self.global_step=0
+                self.epoch=0
+            except:
+                print('in exception')
+                pdb.set_trace()
+                print('in exception')
 
         # configure dataset
         dataset_combined: BaseImageDataset
         datasets=[]
+        pdb.set_trace()
         for each_dataset in cfg.task.dataset_path:
             cfg.task.dataset.dataset_path = each_dataset
             datasets.append(hydra.utils.instantiate(cfg.task.dataset))
@@ -277,7 +287,6 @@ class TrainClassifierWorkspace(BaseWorkspace):
         #     }, 
         #     allow_val_change=True
         # )
-
         # configure checkpoint
         topk_manager = TopKCheckpointManager(
             save_dir=os.path.join(self.output_dir, 'checkpoints'),

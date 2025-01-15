@@ -18,6 +18,8 @@ fuse.cfg
 *.png
 *.pdf
 *.txt
+*.TXT
+MUJOCO_LOG.TXT
 *.npy
 # Generation results
 results/

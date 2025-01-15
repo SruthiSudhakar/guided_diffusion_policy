@@ -5,7 +5,7 @@ checkpoint:
   topk:
     format_str: epoch={epoch:04d}-val_loss={val_loss:.3f}.ckpt
     k: 50
-    mode: max
+    mode: min
     monitor_key: val_loss
 dataloader:
   batch_size: 64
@@ -28,16 +28,16 @@ logging:
   group: null
   id: null
   mode: online
-  name: 2022.12.29-22.31.34_train_diffusion_unet_hybrid_square_image
+  name: train_diffusion_unet_hybrid
   project: diffusion_policy_debug
-  resume: true
+  resume: false
   tags:
   - train_diffusion_unet_hybrid
   - square_image
   - default
 multi_run:
-  run_dir: data/outputs/2022.12.29/22.31.34_train_diffusion_unet_hybrid_square_image
-  wandb_name_base: 2022.12.29-22.31.34_train_diffusion_unet_hybrid_square_image
+  run_dir: data/outputs/2025.01/train_diffusion_unet_hybrid
+  wandb_name_base: train_diffusion_unet_hybrid
 n_action_steps: 8
 n_latency_steps: 0
 n_obs_steps: 2
@@ -276,10 +276,10 @@ task:
     n_action_steps: 8
     n_envs: 28
     n_obs_steps: 2
-    n_test: 21
-    n_test_vis: 4
-    n_train: 6
-    n_train_vis: 2
+    n_test: 14
+    n_test_vis: 1
+    n_train: 14
+    n_train_vis: 1
     past_action: false
     render_obs_key: robot0_agentview_left_image
     shape_meta:
@@ -361,7 +361,7 @@ task_name: square_image
 training:
   classifier_dir: ''
   guidance_scale: 950
-  checkpoint_every: 50
+  checkpoint_every: 100
   debug: false
   device: cuda:0
   gradient_accumulate_every: 1
