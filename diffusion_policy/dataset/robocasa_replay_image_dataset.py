@@ -239,7 +239,10 @@ class RobocasaReplayImageDataset(BaseImageDataset):
                 this_normalizer = get_identity_normalizer_from_stat(stat)
             elif key.endswith('qpos'):
                 this_normalizer = get_range_normalizer_from_stat(stat)
+            elif key.endswith('language_goal'):
+                this_normalizer = get_range_normalizer_from_stat(stat)
             else:
+                print(colored('ISSUE WITH THE NORMALIZER','red'))
                 raise RuntimeError('unsupported')
             normalizer[key] = this_normalizer
 
@@ -285,8 +288,8 @@ class RobocasaReplayImageDataset(BaseImageDataset):
             'obs': dict_apply(obs_dict, torch.from_numpy),
             'action': torch.from_numpy(data['action'].astype(np.float32))
         }            
-        if 'success' in data:
-            torch_data['success'] = torch.from_numpy(data['success'].astype(np.float32))
+        if 'total_reward' in data:
+            torch_data['total_reward'] = torch.from_numpy(data['total_reward'].astype(np.float32))
         if 'object' in data:
             torch_data['object'] = data['object']
         return torch_data
@@ -360,16 +363,16 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
 
         add_ons_list = []
         # save lowdim data
-        if 'success' in demos[f'demo_1'].keys():
-            add_ons_list = ['success']
+        if 'rewards' in demos[f'demo_1'].keys():
+            add_ons_list = ['total_reward']
         if 'object' in demos[f'demo_1'].keys():
-            add_ons_list = ['success', 'object']
+            add_ons_list.append('object')
         for key in tqdm(lowdim_keys + add_ons_list + ['action'], desc="Loading lowdim data"):
             data_key = 'obs/' + key
             if key == 'action':
                 data_key = 'actions'
-            if key == 'success':
-                data_key = 'success'
+            if key == 'total_reward':
+                data_key = 'rewards'
             if key == 'object':
                 data_key = 'object'
             this_data = list()
@@ -384,6 +387,8 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                     this_data.append(text_embeddings)
                 elif key=='object':
                     this_data.append([demo[data_key].asstr()[()]])
+                elif key=='total_reward':
+                    this_data.append([[max(demo[data_key])]])
                 else:
                     try:
                         this_data.append(demo[data_key][:].astype(np.float32))
@@ -398,7 +403,7 @@ def _convert_robomimic_to_replay(store, shape_meta, dataset_path, abs_action, ro
                     rotation_transformer=rotation_transformer
                 )
                 assert this_data.shape == (n_steps,) + tuple(shape_meta['action']['shape'])
-            elif key == 'success':
+            elif key == 'total_reward':
                 assert this_data.shape == (len(episode_ends),1)
             elif key == 'object':
                 assert this_data.shape == (len(episode_ends),1)

@@ -100,9 +100,7 @@ class ReplayBuffer:
         for key, value in root['data'].items():
             if key=='action':
                 assert (int(value.shape[0]/2) == root['meta']['episode_ends'][-1]) or (value.shape[0] == root['meta']['episode_ends'][-1])
-            elif key=='success':
-                assert True==True
-            elif key=='object':
+            elif key=='success' or key=='object' or key=='total_reward':
                 assert True==True
             elif key=='language_goal':
                 assert(value.shape[0] == len(root['meta']['episode_ends']))

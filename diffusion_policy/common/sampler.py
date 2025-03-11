@@ -180,7 +180,7 @@ class SequenceSampler:
             = self.indices[idx]
         result = dict()
         for key in self.keys:
-            if key=='success':
+            if key=='total_reward':
                 result[key] = np.array(self.replay_buffer[key][episode_idx])
             elif key=='object':
                 result[key] = np.array(self.replay_buffer[key][episode_idx])

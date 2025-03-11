@@ -1,6 +1,7 @@
 import gym
 import numpy as np
 from diffusion_policy.real_world.video_recorder import VideoRecorder
+import pdb
 
 class VideoRecordingWrapper(gym.Wrapper):
     def __init__(self, 
@@ -43,6 +44,7 @@ class VideoRecordingWrapper(gym.Wrapper):
                 mode=self.mode, **self.render_kwargs)
             assert frame.dtype == np.uint8
             self.video_recoder.write_frame(frame)
+            self.frames.append(frame)
         return result
     
     def render(self, mode='rgb_array', **kwargs):

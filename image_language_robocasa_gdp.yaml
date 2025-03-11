@@ -361,7 +361,7 @@ task_name: square_image
 training:
   classifier_dir: ''
   guidance_scale: 950
-  checkpoint_every: 100
+  checkpoint_every: 50
   debug: false
   device: cuda:0
   gradient_accumulate_every: 1
@@ -371,7 +371,7 @@ training:
   max_val_steps: null
   num_epochs: 8000
   resume: false
-  rollout_every: 500
+  rollout_every: 200
   sample_every: 50
   seed: 42
   tqdm_interval_sec: 1.0

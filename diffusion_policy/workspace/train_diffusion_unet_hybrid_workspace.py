@@ -34,6 +34,8 @@ import pdb
 import dill
 import time
 from termcolor import colored
+import torch.nn.functional as F
+from einops import rearrange, reduce
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
@@ -54,6 +56,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
         self.model: DiffusionUnetHybridImagePolicy = hydra.utils.instantiate(cfg.policy)
         self.classifier=None
         if 'classifier_dir' in cfg.training and cfg.training.classifier_dir != '':
+            print('USING THE CLASSIFIER FOR GUIDANCE OR TRAINING')
             classifier_payload = torch.load(open(cfg.training.classifier_dir, 'rb'), pickle_module=dill)
             classifier_cfg = classifier_payload['cfg']
             classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
@@ -265,18 +268,27 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                     for batch_idx, batch in enumerate(tepoch):
                         # device transfer
-                        batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                        batch = dict_apply(batch, lambda x: x.to(accelerator.device, non_blocking=True))
                         
                         # always use the latest batch
                         train_sampling_batch = batch
 
                         # compute loss
-                        # raw_loss = self.model(batch)
-                        # raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_model_gradients)
+
                         if self.classifier:
-                            raw_loss, mse_loss, guidance_grad_scaled = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_policy=accelerator.unwrap_model(self.classifier), guidance_scale=cfg.training.guidance_scale)
-                        else:
-                            raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale)
+                            raise Exception()
+                        pred,target,loss_mask = self.model(batch)
+                        mse_loss = F.mse_loss(pred, target, reduction='none')
+                        raw_loss = mse_loss * loss_mask.type(mse_loss.dtype)
+                        raw_loss = reduce(raw_loss, 'b ... -> b (...)', 'mean')
+                        raw_loss = reduce(raw_loss, 'b ... -> b', 'mean')
+                        raw_loss = raw_loss.mean()
+
+                        # raw_loss = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_model_gradients)
+                        # if self.classifier:
+                        #     raw_loss, mse_loss, guidance_grad_scaled = accelerator.unwrap_model(self.model).compute_loss(batch, classifier_policy=accelerator.unwrap_model(self.classifier), guidance_scale=cfg.training.guidance_scale)
+                        # else:
+                            # raw_loss = self.model.compute_loss(batch, classifier_policy=None, guidance_scale=cfg.training.guidance_scale)
 
                         # from torchviz import make_dot
                         # import pylab
@@ -285,7 +297,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         # pylab.savefig(f'{filename}.png')
 
                         loss = raw_loss / cfg.training.gradient_accumulate_every
-                        loss.backward()
+                        accelerator.backward(loss)
 
                         # step optimizer
                         if self.global_step % cfg.training.gradient_accumulate_every == 0:
@@ -346,7 +358,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                     step_log.update(runner_log)
 
                 # run validation
-                if (self.epoch % cfg.training.val_every) == 0 and accelerator.is_main_process:
+                if (self.epoch % cfg.training.val_every) == 0 and len(val_dataloader) > 0 and accelerator.is_main_process:
                     with torch.no_grad():
                         val_losses = list()
                         with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
@@ -387,8 +399,10 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         obs_dict = batch['obs']
                         gt_action = batch['action']
 
-                        result = policy.predict_action(obs_dict)
-                        # result = policy.predict_action(obs_dict, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale, guided_towards=1.0)
+                        if self.classifier:
+                            result, classifier_pred = policy.predict_action(obs_dict, classifier_policy=self.classifier, guidance_scale=cfg.training.guidance_scale, guided_towards=1.0)
+                        else:
+                            result, classifier_pred = policy.predict_action(obs_dict)
                         pred_action = result['action_pred']
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         log_action_mse(step_log, 'train', pred_action, gt_action)

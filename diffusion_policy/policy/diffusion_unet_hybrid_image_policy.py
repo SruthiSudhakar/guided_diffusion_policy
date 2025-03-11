@@ -21,6 +21,7 @@ from diffusion_policy.common.pytorch_util import dict_apply, replace_submodules
 import pdb
 import numpy as np
 from lovely_tensors import lovely
+import json
 
 class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     def __init__(self, 
@@ -185,7 +186,10 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             condition_data, condition_mask,
             local_cond=None, global_cond=None,
             generator=None, classifier_policy=None,
+            classifier_policy_global_cond=None,
             guidance_scale=None, guided_towards=None,
+            trajectory_step=None, adaptive_guidance=None,
+            max_steps=None, get_class_scores=False,
             # keyword arguments to scheduler.step
             **kwargs
             ):
@@ -201,7 +205,8 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
     
         # set step values
         scheduler.set_timesteps(self.num_inference_steps)
-
+        classifier_pred = {'classifier_policy_global_cond': {}, 'global_cond': {}}
+        # initial_pred = classifier_policy.model(condition_data[condition_mask], scheduler.timesteps[0], local_cond=local_cond, global_cond=classifier_policy_global_cond)
         for t in scheduler.timesteps:
             # 1. apply conditioning
             trajectory[condition_mask] = condition_data[condition_mask]
@@ -214,18 +219,30 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                 # 2.5 compute classifier graident
                 timesteps = torch.zeros(trajectory.shape[0], device=trajectory.device).long()+t
                 labels=torch.zeros(trajectory.shape[0]).unsqueeze(dim=-1).to(trajectory.device)+guided_towards
-                guidance_gradient = classifier_policy.compute_classifier_gradient( trajectory,  global_cond=global_cond, timesteps=timesteps, label=labels)
-
+                #compute the gradient which points in the direction of steepest ascent
+                guidance_gradient, cpoutput= classifier_policy.compute_classifier_gradient( trajectory,  global_cond=classifier_policy_global_cond, timesteps=timesteps, label=labels)
+                current_guidance_scale=float(guidance_scale)
                 if guidance_scale == 'variable':
-                    guidance_scale = (model_output.mean() / guidance_gradient.mean())
                     #round_to_nearest_power_of_10
-                    log10_guidance_scale = math.log10(abs(guidance_scale))
+                    log10_guidance_scale = math.log10(abs((model_output.mean() / guidance_gradient.mean())))
                     nearest_power = round(log10_guidance_scale)
-                    guidance_scale = 10 ** nearest_power
-
-                guidance_scale=float(guidance_scale)
-                model_output += guidance_scale * guidance_gradient
-
+                    current_guidance_scale = 10 ** (nearest_power-1)
+                elif adaptive_guidance=='linear':
+                    current_guidance_scale*=trajectory_step/max_steps
+                elif adaptive_guidance=='keypoints':
+                    guidance_scales_list= [0]*100
+                    guidance_scales_list[10:27]=[current_guidance_scale] * 17
+                    guidance_scales_list[32:]=[current_guidance_scale] * (100-32)
+                    current_guidance_scale = guidance_scales_list[trajectory_step]
+                    # if current_guidance_scale>0:
+                    #     pdb.set_trace()
+                        # print('ts: ', trajectory_step, 'cgs', current_guidance_scale, 'model_output', model_output.mean(), 'guidance_gradient', guidance_gradient.mean() * float(current_guidance_scale))
+                model_output += float(current_guidance_scale) * guidance_gradient
+            
+            if t==0 and classifier_policy and get_class_scores:
+                classifier_pred['classifier_policy_global_cond']['before']= nn.Sigmoid()(cpoutput)[:,0]
+                # classifier_pred['global_cond']['before']= nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=global_cond))[:,0]
+                pdb.set_trace()
             # 3. compute previous image: x_t -> x_t-1
             trajectory = scheduler.step(
                 model_output, t, trajectory, 
@@ -233,14 +250,16 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
                 **kwargs
                 ).prev_sample
 
-        
+            if t==0 and classifier_policy and get_class_scores:
+                # pdb.set_trace()
+                classifier_pred['classifier_policy_global_cond']['after']= nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=classifier_policy_global_cond))[:,0]
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask]        
 
-        return trajectory
+        return trajectory, classifier_pred
 
 
-    def predict_action(self, obs_dict: Dict[str, torch.Tensor], classifier_policy=None, guidance_scale=None, guided_towards=None) -> Dict[str, torch.Tensor]:
+    def predict_action(self, obs_dict: Dict[str, torch.Tensor], classifier_policy=None, guidance_scale=None, guided_towards=None, trajectory_step=None, adaptive_guidance=None, max_steps=None, get_class_scores=False) -> Dict[str, torch.Tensor]:
         """
         obs_dict: must include "obs" key
         result: must include "action" key
@@ -274,6 +293,10 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             # empty data for action
             cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
             cond_mask = torch.zeros_like(cond_data, dtype=torch.bool)
+            classifier_policy_global_cond=None
+            if classifier_policy:
+                classifier_policy_nobs_features = classifier_policy.obs_encoder(this_nobs)
+                classifier_policy_global_cond = classifier_policy_nobs_features.reshape(B, -1)
         else:
             # condition through impainting
             this_nobs = dict_apply(nobs, lambda x: x[:,-To:,...].reshape(-1,*x.shape[2:]))
@@ -286,14 +309,20 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             cond_mask[:,:To,Da:] = True
 
         # run sampling
-        nsample = self.conditional_sample(
+        # nsample, inital_pred, classifier_pred = self.conditional_sample(
+        nsample, classifier_pred = self.conditional_sample(
             cond_data, 
             cond_mask,
             local_cond=local_cond,
             global_cond=global_cond, 
             classifier_policy=classifier_policy,
+            classifier_policy_global_cond=classifier_policy_global_cond,
             guidance_scale=guidance_scale,
             guided_towards=guided_towards,
+            trajectory_step=trajectory_step,
+            adaptive_guidance=adaptive_guidance,
+            max_steps=max_steps,
+            get_class_scores=get_class_scores,
             **self.kwargs)
         
         # unnormalize prediction
@@ -309,11 +338,78 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             'action': action,
             'action_pred': action_pred
         }
-        return result
+        return result, classifier_pred
 
     # ========= training  ============
     def set_normalizer(self, normalizer: LinearNormalizer):
         self.normalizer.load_state_dict(normalizer.state_dict())
+
+    def forward(self, batch):
+        # normalize input
+        assert 'valid_mask' not in batch
+        nobs = self.normalizer.normalize(batch['obs'])
+        nactions = self.normalizer['action'].normalize(batch['action'])
+        batch_size = nactions.shape[0]
+        horizon = nactions.shape[1]
+
+        # handle different ways of passing observation
+        local_cond = None
+        global_cond = None
+        trajectory = nactions
+        cond_data = trajectory
+        if self.obs_as_global_cond:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs, 
+                lambda x: x[:,-self.n_obs_steps:,...].reshape(-1,*x.shape[2:]))
+            #TODO: reduce the output dimensionality of the language goal so it doesnt overpower the other lowdim keys
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, Do
+            global_cond = nobs_features.reshape(batch_size, -1)
+        else:
+            # reshape B, T, ... to B*T
+            this_nobs = dict_apply(nobs,
+                lambda x: x[:,-self.n_obs_steps:,...].reshape(-1,*x.shape[2:]))
+            nobs_features = self.obs_encoder(this_nobs)
+            # reshape back to B, T, Do
+            nobs_features = nobs_features.reshape(batch_size, horizon, -1)
+            cond_data = torch.cat([nactions, nobs_features], dim=-1)
+            trajectory = cond_data.detach()
+
+        # generate impainting mask
+        condition_mask = self.mask_generator(trajectory.shape)
+
+        # Sample noise that we'll add to the images
+        noise = torch.randn(trajectory.shape, device=trajectory.device)
+        bsz = trajectory.shape[0]
+        # Sample a random timestep for each image
+        timesteps = torch.randint(
+            0, self.noise_scheduler.config.num_train_timesteps, 
+            (bsz,), device=trajectory.device
+        ).long()
+        # Add noise to the clean images according to the noise magnitude at each timestep
+        # (this is the forward diffusion process)
+        noisy_trajectory = self.noise_scheduler.add_noise(
+            trajectory, noise, timesteps)
+        
+        # compute loss mask
+        loss_mask = ~condition_mask
+
+        # apply conditioning
+        noisy_trajectory[condition_mask] = cond_data[condition_mask]
+        
+        # Predict the noise residual
+        pred = self.model(noisy_trajectory, timesteps, 
+            local_cond=local_cond, global_cond=global_cond)
+            
+        pred_type = self.noise_scheduler.config.prediction_type 
+        if pred_type == 'epsilon':
+            target = noise
+        elif pred_type == 'sample':
+            target = trajectory
+        else:
+            raise ValueError(f"Unsupported prediction type {pred_type}")
+
+        return pred, target, loss_mask
 
     def compute_loss(self, batch, classifier_policy=None, guidance_scale=None):
         # normalize input
@@ -386,6 +482,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
         loss = reduce(loss, 'b ... -> b', 'mean')
 
         if classifier_policy:
+            assert False==True
             '''if its a negative sample, only use the classifier loss, if its a positive sample, use both classifier and mse loss'''
             pred_trajectory=torch.zeros(noisy_trajectory.shape)
             for idx in range(len(timesteps)):
@@ -397,12 +494,12 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             # guidance_gradient = torch.abs(guidance_gradient)
             # guidance_gradient = torch.abs(guidance_gradient)
             # classifier_loss = classifier_policy.compute_loss(batch)
-            classifier_output = classifier_policy.model(pred_trajectory.to(device), timestep=torch.zeros(pred_trajectory.shape[0]).to(device), local_cond=local_cond, global_cond=global_cond)
+            classifier_output = classifier_policy.model(pred_trajectory.to(device), timestep=torch.zeros(pred_trajectory.shape[0]).to(device), local_cond=local_cond, global_cond=classifier_policy_global_cond)
             classifier_probs = torch.sigmoid(classifier_output)
             assert (classifier_probs>1).sum()==0 and (classifier_probs<0).sum()==0
             classifier_log_probs = torch.log(classifier_probs)[:,0]
-            successes = batch['success']
-            loss[successes==0]= 0
+            total_rewards = batch['total_rewards']
+            loss[total_rewards==0]=0
 
             # guidance_scale = (1/10) * (loss.mean() / guidance_gradient.mean())
             # #round_to_nearest_power_of_10
@@ -417,9 +514,9 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             assert False==True
             '''NEGATE THE LOSS if ITS A FAILED EXECUTION'''
             pdb.set_trace()
-            successes = batch['success']
-            successes[successes==0]= -1 * self.negate_failure_losses
-            loss = loss.mean(axis=1) * successes
+            total_rewards = batch['total_rewards']
+            total_rewards[total_rewards==0]= -1 * self.negate_failure_losses
+            loss = loss.mean(axis=1) * total_rewards
 
         loss = loss.mean()
         if classifier_policy:

@@ -5,10 +5,34 @@ source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate clonejgdrobodiff 
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
+
 using the clonejgdrobodiff bc it has robocasa and the updated version of robosuite. with changes added ontop of that to be compatible with dp
 Usage:f
 Training:
-PNP TASKS 
+CV11 - PnPSinkToCounter224_train
+CV11 - PNP TASKS 
+accelerate launch --multi_gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8082 train.py \
+    --config-dir=. \
+    --config-name=image_language_robocasa_gdp.yaml \
+    training.seed=42 \
+    dataloader.batch_size=64 \
+    val_dataloader.batch_size=64 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/PnPX_train_multigpu' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
+    task.env_runner.max_steps=500 
+CV14 - PnPSinkToCounterMg_train
+accelerate launch --multi_gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8088 train.py \
+    --config-dir=. \
+    --config-name=image_language_robocasa_gdp.yaml \
+    training.seed=42 \
+    dataloader.batch_size=64 \
+    val_dataloader.batch_size=64 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_PnPSinkToCounter_mg_train_multigpu' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train.hdf5 
 
 ON CV11
 1. StoveToCounter
@@ -31,10 +55,10 @@ CUDA_VISIBLE_DEVICES=0 python train.py \
     training.seed=42 \
     dataloader.batch_size=512 \
     val_dataloader.batch_size=512 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_robocasalang_PnPSinkToCounter_trainsplit' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_new_images_train.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_new_images_train.hdf5 \
-    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_new_images_train.hdf5 
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/PnPSinkToCounter224_mg_train' \
+    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train_224.hdf5 \
+    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train_224.hdf5 \
+    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train_224.hdf5 
 
 CUDA_VISIBLE_DEVICES=2 python train.py \
     --config-dir=. \
@@ -164,18 +188,7 @@ CUDA_VISIBLE_DEVICES=5 python train.py \
     task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
     task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
     task.env_runner.max_steps=500 
-
-accelerate launch --multi_gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8088 train.py \
-    --config-dir=. \
-    --config-name=image_language_robocasa_gdp.yaml \
-    training.seed=42 \
-    dataloader.batch_size=64 \
-    val_dataloader.batch_size=64 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_robocasalang_PnPX_trainsplit_imagenet_multigpu' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
-    task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/combined/PnPX/demo_gentex_im128_randcams_new_images_train.hdf5 \
-    task.env_runner.max_steps=500
+    
 
 accelerate launch --multi_gpu --num_machines 1 --num_processes=4 --gpu_ids=4,5,6,7 --main_process_port=8086
 CUDA_VISIBLE_DEVICES=5 python train.py \

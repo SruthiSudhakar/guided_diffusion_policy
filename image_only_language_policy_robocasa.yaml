@@ -1,4 +1,4 @@
-_target_: diffusion_policy.workspace.train_classifier_workspace.TrainClassifierWorkspace
+_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
 checkpoint:
   save_last_ckpt: true
   save_last_snapshot: false
@@ -8,11 +8,11 @@ checkpoint:
     mode: min
     monitor_key: val_loss
 dataloader:
-  batch_size: 1024
+  batch_size: 64
   num_workers: 8
-  persistent_workers: false
-  pin_memory: true
-  shuffle: false
+  shuffle: True
+  pin_memory: True
+  persistent_workers: False
 dataset_obs_steps: 2
 ema:
   _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
@@ -26,42 +26,38 @@ horizon: 16
 keypoint_visible_rate: 1.0
 logging:
   group: null
-  id: ${now:%Y.%m.%d.%H.%M.%S}_train_classifier
+  id: null
   mode: online
-  name: train_classifier
+  name: train_diffusion_unet_image
   project: diffusion_policy_debug
   resume: false
   tags:
-  - train_classifier
+  - train_diffusion_unet_image
   - square_image
   - default
 multi_run:
-  run_dir: data/outputs/2025.01/train_classifier
-  wandb_name_base: train_classifier
+  run_dir: data/outputs/2025.01/train_diffusion_unet_image
+  wandb_name_base: train_diffusion_unet_image
 n_action_steps: 8
 n_latency_steps: 0
 n_obs_steps: 2
-name: train_classifier
+name: train_diffusion_unet_image
 obs_as_global_cond: true
 optimizer:
   _target_: torch.optim.AdamW
-  betas:
-  - 0.95
-  - 0.999
-  eps: 1.0e-08
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
   lr: 0.0001
-  weight_decay: 1.0e-06
+  weight_decay: 1.0e-6
 past_action_visible: false
 policy:
-  _target_: diffusion_policy.policy.diffusion_classifier_hybrid_image_policy.DiffusionClassifierHybridImagePolicy
+  _target_: diffusion_policy.policy.diffusion_unet_image_policy.DiffusionUnetImagePolicy
   cond_predict_scale: true
-  crop_shape:
-  - 76
-  - 76
   diffusion_step_embed_dim: 128
   down_dims:
   - 512
-  eval_fixed_crop: true
+  - 1024
+  - 2048
   horizon: 16
   kernel_size: 5
   n_action_steps: 8
@@ -78,7 +74,44 @@ policy:
     variance_type: fixed_small
   num_inference_steps: 100
   obs_as_global_cond: true
-  obs_encoder_group_norm: true
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb    
+    rgb_model:
+      _target_: diffusion_policy.model.vision.model_getter.get_resnet
+      name: resnet18
+      weights: IMAGENET1K_V1 # or r3m
+    resize_shape: [128, 128]
+    crop_shape: [126, 126]
+    random_crop: True
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
   shape_meta:
     action:
       shape:
@@ -105,15 +138,6 @@ policy:
         - 128
         - 128
         type: rgb
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      robot0_gripper_qpos:
-        shape:
-        - 2
 shape_meta:
   action:
     shape:
@@ -140,22 +164,12 @@ shape_meta:
       - 128
       - 128
       type: rgb
-    robot0_eef_pos:
-      shape:
-      - 3
-    robot0_eef_quat:
-      shape:
-      - 4
-    robot0_gripper_qpos:
-      shape:
-      - 2
 task:
   abs_action: false
-  balance_dataset: false
   dataset:
     _target_: diffusion_policy.dataset.robocasa_replay_image_dataset.RobocasaReplayImageDataset
     abs_action: false
-    dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
+    dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
     horizon: 16
     n_obs_steps: 2
     pad_after: 7
@@ -188,19 +202,57 @@ task:
           - 128
           - 128
           type: rgb
-        robot0_eef_pos:
+    use_cache: true
+    val_ratio: 0.02
+  train_subset: null
+  val_subset: null
+  dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
+  dataset_type: ph
+  env_runner:
+    _target_: diffusion_policy.env_runner.robocasa_robomimic_image_runner.RobocasaRobomimicImageRunner
+    abs_action: false
+    crf: 22
+    dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
+    fps: 10
+    max_steps: 360
+    n_action_steps: 8
+    n_envs: 28
+    n_obs_steps: 2
+    n_test: 14
+    n_test_vis: 1
+    n_train: 14
+    n_train_vis: 1
+    past_action: false
+    render_obs_key: robot0_agentview_left_image
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
           shape:
           - 3
-        robot0_eef_quat:
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
           shape:
-          - 4
-        robot0_gripper_qpos:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
           shape:
-          - 2
-    use_cache: true
-    val_ratio: 0.2
-  dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
-  dataset_type: ph
+          - 3
+          - 128
+          - 128
+          type: rgb
+    test_start_seed: 100000
+    tqdm_interval_sec: 1.0
+    train_start_idx: 0
   name: square_image
   shape_meta:
     action:
@@ -228,19 +280,10 @@ task:
         - 128
         - 128
         type: rgb
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      robot0_gripper_qpos:
-        shape:
-        - 2
   task_name: square
 task_name: square_image
 training:
-  checkpoint_every: 2
+  checkpoint_every: 50
   debug: false
   device: cuda:0
   gradient_accumulate_every: 1
@@ -250,15 +293,16 @@ training:
   max_val_steps: null
   num_epochs: 8000
   resume: false
-  rollout_every: 50
+  rollout_every: 200
   sample_every: 50
   seed: 42
   tqdm_interval_sec: 1.0
   use_ema: true
-  val_every: 1
+  val_every: 50
+  freeze_encoder: false
 val_dataloader:
-  batch_size: 1024
-  num_workers: 8
-  persistent_workers: false
-  pin_memory: true
-  shuffle: false
+  batch_size: 64
+  num_workers: 4
+  shuffle: False
+  pin_memory: True
+  persistent_workers: False

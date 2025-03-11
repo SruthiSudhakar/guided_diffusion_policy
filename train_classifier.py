@@ -2,7 +2,7 @@
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 source /proj/vondrick3/sruthi/miniconda3/bin/activate
-conda activate jgdrobodiff
+conda activate clonejgdrobodiff
 cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export HYDRA_FULL_ERROR=1
 
@@ -10,61 +10,40 @@ export HYDRA_FULL_ERROR=1
 Usage:
 Training:
 
-accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=4 --main_process_port=8088
-CUDA_VISIBLE_DEVICES=5 python train.py \
+accelerate launch --multi-gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8080 train.py \
     --config-dir=. \
-    --config-name=image_square_ph_classifier.yaml \
+    --config-name=image_only_classifier.yaml \
     training.seed=42 \
-    training.device=3 \
+    dataloader.batch_size=256 \
+    val_dataloader.batch_size=256 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/imageonly_${now:%m.%d.%H.%M.%S}_big_classifier_shuffle_higherlr' \
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train_no_kbpckt.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1000-val_loss=0.071/PnPSinkToCounter_mg_train_no_kbpctk_21819416/datafile.hdf5\",  \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1000-val_loss=0.071/PnPSinkToCounter_mg_val_kbpctk_firsthalf_21984511/datafile.hdf5\"]" \
+    training.checkpoint_every=1 \
+    training.val_every=1 \
+    dataloader.shuffle=True \
+    val_dataloader.shuffle=True \
+    optimizer.lr=1e-3 \
+    training.lr_warmup_steps=250
+
+accelerate launch --multi-gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8091 train.py \
+    --config-dir=. \
+    --config-name=image_only_classifier.yaml \
+    training.seed=42 \
     dataloader.batch_size=1024 \
     val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_testclassifier_jgdspc' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.01.13/12.45.41_train_diffusion_unet_hybrid_robocasalang_PnPSinkToCounter_trainsplit_imagenet/checkpoints/epoch\=0600-val_loss\=0.079/PnPSinkToCounter_None_1_14_22_31_49/datafile.hdf5
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.01.13/12.45.41_train_diffusion_unet_hybrid_robocasalang_PnPSinkToCounter_trainsplit_imagenet/checkpoints/epoch\=0600-val_loss\=0.079/PnPSinkToCounter_None_1_14_22_31_49/datafile.hdf5
-    training.checkpoint_every=1 
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/imageonly_${now:%m.%d.%H.%M.%S}_big_classifier_preshuffled' \
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/big_classifier_data_combined_shuffled.hdf5\"]"
+    training.checkpoint_every=1 \
+    training.val_every=1 
 
-python 
-accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=5 --main_process_port=8084 train.py \
+accelerate launch --multi-gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8086 train.py \
     --config-dir=. \
-    --config-name=image_square_ph_classifier.yaml \
+    --config-name=image_only_classifier.yaml \
     training.seed=42 \
-    training.device=4 \
-    dataloader.batch_size=1024 \
-    val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_4wredcubeseed6000' \
-    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/4wredcube_seed6000/data_all.hdf5\"]" \
-    task.balance_dataset=false \
-    training.checkpoint_every=1 
-
-    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugbeige2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/mugred2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/needle2_seed6000/data_all.hdf5\"]" \
-
-accelerate launch --num_machines 1 --num_processes=1 --gpu_ids=6 --main_process_port=8094 train.py \
-    --config-dir=. \
-    --config-name=image_square_ph_classifier.yaml \
-    training.seed=42 \
-    training.device=4 \
-    dataloader.batch_size=1024 \
-    val_dataloader.batch_size=1024 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_redgreen2seed6000' \
-    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/redcube2_seed6000/data_all.hdf5\", \"/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/greencube2_seed6000/data_all.hdf5\"]" \
-    task.balance_dataset=false \
-    training.checkpoint_every=1 
-
-    optimizer.lr=0.00001 \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/combined2_seed6000/data_all.hdf5 \
-
-accelerate launch --multi_gpu --num_machines 1 --num_processes=1 --gpu_ids=1 --main_process_port=8080 train.py \
-    --config-dir=. \
-    --config-name=image_square_ph_classifier.yaml \
-    training.seed=42 \
-    training.device=2 \
-    dataloader.batch_size=2048 \
-    val_dataloader.batch_size=2048 \
-    task.balance=false \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%m.%d.%H.%M.%S}_${name}_classifier_hammer_needle_greencube_mugbeige' \
-    task.dataset.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer_needle_greencube_mugbeige/combined.hdf5 \
-    task.dataset_path=/proj/vondrick3/sruthi/robots/diffusion_policy/data/curateddata/hammer_needle_greencube_mugbeige/combined.hdf5 \
+    dataloader.batch_size=256 \
+    val_dataloader.batch_size=256 \
+    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/imageonly_${now:%m.%d.%H.%M.%S}_classifier_preshuffled' \
+    task.dataset_path="[\"/proj/vondrick3/sruthi/robots/diffusion_policy/data/small_classifier_data_combined_shuffled.hdf5\"]" \
     training.checkpoint_every=10 \
-    +task.env_runner.object=hammer
-
+    training.val_every=10 
 """

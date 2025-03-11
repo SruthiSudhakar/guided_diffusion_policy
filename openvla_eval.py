@@ -9,7 +9,7 @@ export HYDRA_FULL_ERROR=1
 Usage:      
 python ../robocasa/robocasa/scripts/playback_dataset.py --dataset /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/mg/2024-05-04-22-14-34_and_2024-05-07-07-40-21/demo_gentex_im128_randcams_new_images_train_no_kbpckt_first300.hdf5 --n 1 --use-actions
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1000-val_loss=0.071.ckpt \
+python ogeval.py --pretrained_checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1000-val_loss=0.071.ckpt \
                 --device cuda:5 \
                 --robocasa \
                 --change_test_textures \
@@ -24,7 +24,7 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --show_classifier_scores 
                 
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+python ogeval.py --pretrained_checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
                 --device cuda:0 \
                 --robocasa \
                 --change_test_textures \
@@ -40,7 +40,7 @@ python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/dat
                 --guided_towards 1 \
                 --show_classifier_scores 
 
-python ogeval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+python ogeval.py --pretrained_checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
                 --device cuda:1 \
                 --robocasa \
                 --change_test_textures \
@@ -72,8 +72,23 @@ import h5py
 from data.dataset_registery import DATASETS
 from termcolor import colored
 import time
+import numpy as np
+import tensorflow as tf
+from PIL import Image
+from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
+from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
+from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
+from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
+from experiments.robot.openvla_utils import get_processor
+from experiments.robot.robot_utils import (
+    get_action,
+    get_image_resize_size,
+    get_model,
+)
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 @click.command()
-@click.option('-c', '--checkpoint', required=True)
+@click.option('-c', '--pretrained_checkpoint', required=True)
 @click.option('-list_dataset_path', '--list_dataset_path', required=False)
 @click.option('-o', '--output_dir', required=False)
 @click.option('-classifier_dir', '--classifier_dir', required=False)
@@ -95,10 +110,12 @@ import time
 @click.option('-init_state_none', '--init_state_none', is_flag=True)
 @click.option('-debug', '--debug', is_flag=True)
 @click.option('-show_classifier_scores', '--show_classifier_scores', is_flag=True)
+@click.option('-load_in_8bit', '--load_in_8bit', is_flag=True)
+@click.option('-load_in_4bit', '--load_in_4bit', is_flag=True)
 @click.option('-adaptive_guidance', '--adaptive_guidance', default='None')
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, show_classifier_scores, adaptive_guidance):
+def main(pretrained_checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, show_classifier_scores, adaptive_guidance):
     # Extract the value for task.dataset_path
-    yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
+    yaml_file = '/'.join(pretrained_checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
     with open(yaml_file, 'r') as file:
         train_overrides = yaml.safe_load(file)
     # Convert the list into a dictionary
@@ -124,7 +141,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_sca
         list_dataset_path = DATASETS[list_dataset_path]
 
     for dataset_path in list_dataset_path:
-        output_dir = checkpoint[:-5]+'/'  # Replace with your file path
+        output_dir = pretrained_checkpoint[:-5]+'/'  # Replace with your file path
         if max_steps is None:
             max_steps=[]
             data = h5py.File(dataset_path, 'r')
@@ -148,7 +165,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_sca
         print(colored(f'saving to: f{output_dir}', 'green'))
         
         with open (output_dir+'/save_some_deets.txt', 'w') as f: 
-            deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', \
+            deets = ['checkpoint', pretrained_checkpoint, 'output_dir', output_dir, 'dataset_path', \
                 dataset_path, 'classifier_dir', classifier_dir, 'guidance_scale', \
                 guidance_scale, 'guided_towards', guided_towards, 'max_steps', max(max_steps), \
                 'object',object, 'n_train', n_train, 'n_test', n_test, "n_envs", n_envs, \
@@ -158,8 +175,8 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_sca
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
-        # load checkpoint
-        payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
+        # load pretrained_checkpoint
+        payload = torch.load(open(pretrained_checkpoint, 'rb'), pickle_module=dill)
         cfg = payload['cfg']
 
         if robocasa:
@@ -212,27 +229,32 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, guidance_sca
         policy.eval()
         
         if classifier_dir:
-            classifier_payload = torch.load(open(classifier_dir+'.ckpt', 'rb'), pickle_module=dill)
-            classifier_cfg = classifier_payload['cfg']
-            classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
+            # classifier_payload = torch.load(open(classifier_dir+'.ckpt', 'rb'), pickle_module=dill)
+            # classifier_cfg = classifier_payload['cfg']
+            # classifier_cls = hydra.utils.get_class(classifier_cfg._target_)
 
-            classifier_workspace = classifier_cls(classifier_cfg, output_dir=classifier_dir)
-            classifier_workspace: BaseWorkspace
-            classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
+            # classifier_workspace = classifier_cls(classifier_cfg, output_dir=classifier_dir)
+            # classifier_workspace: BaseWorkspace
+            # classifier_workspace.load_payload(classifier_payload, exclude_keys=None, include_keys=None)
             
-            # get policy from workspace
-            classifier_policy = classifier_workspace.model    
-            classifier_policy.to(device)
+            # # get policy from workspace
+            # classifier_policy = classifier_workspace.model    
+            # classifier_policy.to(device)
+            # classifier_policy.eval()
+            
+            classifier_processor = get_processor(cfg)
+
+            classifier_policy = get_vla(cfg)
             classifier_policy.eval()
-            
+
             # run eval
             env_runner = hydra.utils.instantiate(
                 cfg.task.env_runner,
                 output_dir=output_dir)
             if isinstance(guidance_scale, str):
-                runner_log= env_runner.run(policy, classifier_policy, guidance_scale, float(guided_towards))
+                runner_log= env_runner.run(policy, classifier_processor, classifier_policy, guidance_scale, float(guided_towards))
             else:
-                runner_log= env_runner.run(policy, classifier_policy, float(guidance_scale), float(guided_towards))
+                runner_log= env_runner.run(policy, classifier_processor, classifier_policy, float(guidance_scale), float(guided_towards))
         else:
             # run eval
             env_runner = hydra.utils.instantiate(

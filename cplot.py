@@ -8,7 +8,7 @@ file1 = open(filename, 'r')
 Lines = file1.readlines()
 
 train_losses=[]
-valid_losses=[0]
+val_losses=[0]
 valid_accuracy=[0]
 global_step=[]
 epoch=[]
@@ -19,15 +19,15 @@ for line in Lines:
     global_step.append(line['global_step'])
     epoch.append(line['epoch'])
     if 'valid_accuracy' in line:
-        valid_losses.append(line['valid_loss'])
+        val_losses.append(line['val_loss'])
         valid_accuracy.append(line['valid_accuracy'])
     else:
-        valid_losses.append(valid_losses[-1])
+        val_losses.append(val_losses[-1])
         valid_accuracy.append(valid_accuracy[-1])
 
 print('/'.join(filename.split('/')[:-1])+'/trainloss_gs.png')
 plt.plot(epoch, train_losses, label = "train_loss")   # Plot the chart
-plt.plot(epoch, valid_losses[1:], label = "valid_loss")   # Plot the chart
+plt.plot(epoch, val_losses[1:], label = "val_loss")   # Plot the chart
 plt.plot(epoch, valid_accuracy[1:], label = "valid_accuracy")   # Plot the chart
 plt.legend()
 plt.savefig('/'.join(filename.split('/')[:-1])+'/trainloss_epoch.png')  # display

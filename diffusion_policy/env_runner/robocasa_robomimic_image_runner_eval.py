@@ -27,6 +27,8 @@ from lovely_numpy import lo
 import pdb, json
 from termcolor import colored
 from robocasa.models.objects.kitchen_objects import OBJ_CATEGORIES, OBJ_GROUPS
+import cv2
+import time
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
@@ -48,6 +50,7 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
 
 from transformers import CLIPTokenizer, CLIPModel
 import torch
+
 # Load the CLIP model and tokenizer
 clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
@@ -83,6 +86,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             change_test_textures=False,
             change_test_objects=False,
             change_test_object_instances=False,
+            init_state_none=False,
+            debug=False,
+            show_classifier_scores=False,
+            adaptive_guidance='None',
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -186,20 +193,41 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         env_prefixs = list()
         env_init_fn_dills = list()
 
-        # train
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        clip_model.to(device)
+        train_embeddings_list =[]
+        batch_size = 128  # You can adjust this based on your memory capacity
+        # first compute clip embeddings quickly
         with h5py.File(dataset_path, 'r') as f:
-            for i in range(n_train):
+            for i in tqdm.tqdm(range(0, n_train, batch_size)):  # Process in batches
+                texts_batch = []
+                batch_indices = []
+                for j in range(batch_size):
+                    idx = (i + j) % len(f['data'])
+                    train_idx = train_start_idx + idx
+                    ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta", None)
+                    text = json.loads(ep_meta)['lang']
+                    texts_batch.append(text)
+                    batch_indices.append(train_idx)            
+                inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                inputs = {key: value.to(device) for key, value in inputs.items()}
+                with torch.no_grad():
+                    batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                    batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
+        
+                # Append the embeddings to the list
+                train_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
+        with h5py.File(dataset_path, 'r') as f:
+            embedding_idx=0
+            for i in tqdm.tqdm(range(n_train)):
                 i=i % len(f['data'])
                 train_idx = train_start_idx + i
                 enable_render = True
                 init_state = f[f'data/demo_{train_idx}/states'][0]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
-                text = json.loads(ep_meta)['lang']
-                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                # Encode the text using CLIP
-                with torch.no_grad():
-                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                language_goal_embedding = train_embeddings_list[embedding_idx]
+                embedding_idx+=1
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -227,14 +255,35 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.language_goal = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
-                    env.env.env.env.env.hard_reset=False
+                    # env.env.env.env.env.hard_reset=False
 
                 env_seeds.append(train_idx)
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
+
+        test_embeddings_list =[]
+        # first compute clip embeddings quickly
+        with h5py.File(dataset_path, 'r') as f:
+            for i in tqdm.tqdm(range(0, n_test, batch_size)):  # Process in batches
+                texts_batch = []
+                batch_indices = []
+                for j in range(batch_size):
+                    idx = (i + j) % len(f['data'])
+                    test_idx = train_start_idx + idx
+                    ep_meta = f[f'data/demo_{test_idx}'].attrs.get("ep_meta", None)
+                    text = json.loads(ep_meta)['lang']
+                    texts_batch.append(text)
+                    batch_indices.append(test_idx)            
+                inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                inputs = {key: value.to(device) for key, value in inputs.items()}
+                with torch.no_grad():
+                    batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                    batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
+                test_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
         #test
         with h5py.File(dataset_path, 'r') as f:
-            for i in range(n_test):
+            embedding_idx=0
+            for i in tqdm.tqdm(range(n_test)):
                 i=i % len(f['data'])
                 seed = test_start_seed + i
                 enable_render = i < n_test_vis
@@ -245,40 +294,34 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 if change_test_textures:
                     if 'gen_textures' in ep_meta:
                         ep_meta['gen_textures']={}
-                if change_test_objects:
-                    for obj in ep_meta['object_cfgs']:
-                        if obj['name']=='obj':
-                            temp_obj_info = obj.pop('info',None)
-                            obj.pop('cookable',None)
-                            obj.pop('microwavable',None)
-                            obj.pop('washable',None)
-                            obj.pop('freezable',None)
-                            env_name=env_meta["env_name"]
-                            obj['exclude_obj_groups']=f"{env_name}_seen"
-                            print('replacing',  temp_obj_info['cat'],'excluding these groups: ', f"{env_name}_seen")
-                            # new_object = OBJ_GROUPS[f"{env_name}_unseen"][obj['info']['cat']]
-                            # obj['info']['mjcf_path'] = new_object
-                            # obj['info']['cat'] = new_object.split('/')[-3]
-                            # print('replacing',obj['info']['cat']  ,'with',new_object)
+                # if change_test_objects:
+                #     for obj in ep_meta['object_cfgs']:
+                #         if obj['name']=='obj':
+                #             temp_obj_info = obj.pop('info',None)
+                #             obj.pop('cookable',None)
+                #             obj.pop('microwavable',None)
+                #             obj.pop('washable',None)
+                #             obj.pop('freezable',None)
+                #             env_name=env_meta["env_name"]
+                #             obj['exclude_obj_groups']=f"{env_name}_seen"
+                #             print('replacing',  temp_obj_info['cat'],'excluding these groups: ', f"{env_name}_seen")
+                #             # new_object = OBJ_GROUPS[f"{env_name}_unseen"][obj['info']['cat']]
+                #             # obj['info']['mjcf_path'] = new_object
+                #             # obj['info']['cat'] = new_object.split('/')[-3]
+                #             # print('replacing',obj['info']['cat']  ,'with',new_object)
 
-                if change_test_object_instances:
-                    for obj in ep_meta['object_cfgs']:
-                        if obj['name']=='obj':
-                            temp_info = obj.pop('info',None)
-                            obj['split']='B'
-                            obj['obj_groups']=temp_info['cat']
-                            # pdb.set_trace()
-                            # print('replacing with new instance',temp_info['cat'] )
+                # if change_test_object_instances:
+                #     for obj in ep_meta['object_cfgs']:
+                #         if obj['name']=='obj':
+                #             temp_info = obj.pop('info',None)
+                #             obj['split']='B'
+                #             obj['obj_groups']=temp_info['cat']
+                #             # pdb.set_trace()
+                #             # print('replacing with new instance',temp_info['cat'] )
 
                 ep_meta = json.dumps(ep_meta)
-
-                text = json.loads(ep_meta)['lang']
-                # if change_test_objects:
-                #     text.replace(obj['info']['cat'],new_object.split('/')[-3])
-                inputs = clip_tokenizer(text, padding=True, return_tensors="pt")
-                # Encode the text using CLIP
-                with torch.no_grad():
-                    language_goal_embedding = clip_model.get_text_features(**inputs).numpy()[0]
+                language_goal_embedding = test_embeddings_list[embedding_idx]
+                embedding_idx+=1
 
                 def init_fn(env, init_state=init_state, env_model=env_model, ep_meta=ep_meta,
                     enable_render=enable_render):
@@ -300,7 +343,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                     # switch to init_state reset
                     assert isinstance(env.env.env, RobomimicImageWrapper)
-                    env.env.env.init_state = init_state
+                    if init_state_none:
+                        env.env.env.init_state = None
+                    else:
+                        env.env.env.init_state = init_state
                     if not change_test_objects and not change_test_object_instances:
                         env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
@@ -310,16 +356,21 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.reset()
                     # if change_test_textures:
                     #     print('set the textures so it doesnt change going forwards')
-                    env.env.env.env.env.hard_reset=False
+                    # env.env.env.env.env.hard_reset=True
 
                 env_seeds.append(test_idx)
                 env_prefixs.append('test/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
+        self.start_time = time.time()
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"1 et: {elapsed_time:.2f}",'green'))
 
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)
-
-        # env = SyncVectorEnv(env_fns)
-
+        if debug:
+            env = SyncVectorEnv(env_fns)
+        else:
+            env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"2 et: {elapsed_time:.2f}",'green'))
         if save_stuff:
             self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
             self.datagrp =  self.data_file.create_group('data')
@@ -344,6 +395,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.tqdm_interval_sec = tqdm_interval_sec
         self.output_dir = output_dir
         self.save_stuff = save_stuff
+        self.show_classifier_scores=show_classifier_scores
+        self.adaptive_guidance=adaptive_guidance
 
     def run(self, policy: BaseImagePolicy, classifier=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -359,7 +412,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         # allocate data
         all_objects = [None] * n_inits
         all_video_paths = [None] * n_inits
+        all_video_frames=[None]*n_inits
         all_rewards = [None] * n_inits
+        all_classification_scores1_before = [None] * n_inits
+        # all_classification_scores2_before = [None] * n_inits
+        all_classification_scores1_after = [None] * n_inits
+        # all_classification_scores2_after = [None] * n_inits
 
         demo_number = -1
         for chunk_idx in range(n_chunks):
@@ -392,6 +450,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             done = False
             env_step_index = 0
             while not done:
+                env_step_index+=1
                 # create obs dict
                 np_obs_dict = dict(obs)
                 if self.past_action and (past_action is not None):
@@ -406,10 +465,16 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    if classifier:
-                        action_dict = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards)
+                    if self.save_stuff:
+                        del obs_dict['robot0_eef_pos']
+                        del obs_dict['robot0_eef_quat']
+                        del obs_dict['robot0_gripper_qpos']
+                    if self.adaptive_guidance!='None':
+                        action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards, trajectory_step=env_step_index, adaptive_guidance=self.adaptive_guidance, max_steps=self.max_steps/self.n_action_steps, get_class_scores=self.show_classifier_scores)
+                    elif classifier:
+                        action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards, get_class_scores=self.show_classifier_scores)
                     else:
-                        action_dict = policy.predict_action(obs_dict)
+                        action_dict, classifier_action_pred = policy.predict_action(obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
@@ -438,7 +503,18 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 extended_env_action = np.concatenate((env_action, add_on), axis=-1)
                 obs, reward, done, info = env.step(extended_env_action)
 
-                # env_step_index+=1
+                if classifier and self.show_classifier_scores:
+                    if 'save_rollout_classification_scores_1_before' not in locals():
+                        save_rollout_classification_scores_1_before = np.expand_dims(classifier_action_pred['classifier_policy_global_cond']['before'].detach().cpu().numpy(),1)
+                        # save_rollout_classification_scores_2_before = np.expand_dims(classifier_action_pred['global_cond']['before'].detach().cpu().numpy(),1)
+                        save_rollout_classification_scores_1_after = np.expand_dims(classifier_action_pred['classifier_policy_global_cond']['after'].detach().cpu().numpy(),1)
+                        # save_rollout_classification_scores_2_after = np.expand_dims(classifier_action_pred['global_cond']['after'].detach().cpu().numpy(),1)
+                    else:
+                        save_rollout_classification_scores_1_before = np.hstack((save_rollout_classification_scores_1_before,np.expand_dims(classifier_action_pred['classifier_policy_global_cond']['before'].detach().cpu().numpy(),1)))
+                        # save_rollout_classification_scores_2_before = np.hstack((save_rollout_classification_scores_2_before,np.expand_dims(classifier_action_pred['global_cond']['before'].detach().cpu().numpy(),1)))
+                        save_rollout_classification_scores_1_after = np.hstack((save_rollout_classification_scores_1_after,np.expand_dims(classifier_action_pred['classifier_policy_global_cond']['after'].detach().cpu().numpy(),1)))
+                        # save_rollout_classification_scores_2_after = np.hstack((save_rollout_classification_scores_2_after,np.expand_dims(classifier_action_pred['global_cond']['after'].detach().cpu().numpy(),1)))
+
                 if self.save_stuff:
                     if 'save_rollout_obsdict_robot0_agentview_right_image' not in locals():
                         save_rollout_obsdict_robot0_agentview_right_image = np.expand_dims(np_obs_dict['robot0_agentview_right_image'],0)
@@ -462,9 +538,18 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
+            all_video_frames[this_global_slice] = env.call('get_attr', 'frames')[this_local_slice]
             all_objects[this_global_slice] = env.call('get_env_metadata')[this_local_slice]
             all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
-
+            if classifier and self.show_classifier_scores:
+                all_classification_scores1_before[this_global_slice] = save_rollout_classification_scores_1_before
+                # all_classification_scores2_before[this_global_slice] = save_rollout_classification_scores_2_before
+                all_classification_scores1_after[this_global_slice] = save_rollout_classification_scores_1_after
+                # all_classification_scores2_after[this_global_slice] = save_rollout_classification_scores_2_after
+                del save_rollout_classification_scores_1_before
+                # del save_rollout_classification_scores_2_before
+                del save_rollout_classification_scores_1_after
+                # del save_rollout_classification_scores_2_after
             if self.save_stuff:
                 print('MORE SAVING STUFF')
                 #Ep meta
@@ -485,32 +570,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     obsgrp.create_dataset('robot0_eef_pos', data = save_rollout_obsdict_robot0s[:,index,:,:3].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,:3].shape[2:]))
                     obsgrp.create_dataset('robot0_eef_quat', data = save_rollout_obsdict_robot0s[:,index,:,3:7].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,3:7].shape[2:]))
                     obsgrp.create_dataset('robot0_gripper_qpos', data = save_rollout_obsdict_robot0s[:,index,:,7:].reshape(-1, *save_rollout_obsdict_robot0s[:,index,:,7:].shape[2:]))
-                    # actiondictgrp = demogrp.create_group('action_dict') 
-                    # for grp_name in current_dataset['data'][demo]['action_dict']:
-                    #     dset = actiondictgrp.create_dataset(grp_name, data = current_dataset['data'][demo]['action_dict'][grp_name])
-
-                # if 'all_save_rollout_obsdict_robot0_agentview_right_image' not in locals():
-                    # all_save_rollout_obsdict_robot0_agentview_right_image = np.array(save_rollout_obsdict_robot0_agentview_right_image)
-                    # all_save_rollout_obsdict_robot0_agentview_left_image = np.array(save_rollout_obsdict_robot0_agentview_left_image)
-                    # all_save_rollout_obsdict_eyeinhand_images = np.array(save_rollout_obsdict_eyeinhand_images)
-                    # all_save_rollout_obsdict_robot0s = np.array(save_rollout_obsdict_robot0s)
-                    # all_save_rollout_actions = np.array(save_rollout_actions)
-                    # all_save_grasping = np.array(env.call('is_grasping')) 
-                    # all_save_reward = np.array(env.call('get_rewards'))
-                # else:
-                #     all_save_rollout_obsdict_robot0_agentview_right_image = np.concatenate((all_save_rollout_obsdict_robot0_agentview_right_image, np.array(save_rollout_obsdict_robot0_agentview_right_image)), axis=1)
-                #     all_save_rollout_obsdict_robot0_agentview_left_image = np.concatenate((all_save_rollout_obsdict_robot0_agentview_left_image, np.array(save_rollout_obsdict_robot0_agentview_left_image)), axis=1)
-                #     all_save_rollout_obsdict_eyeinhand_images = np.concatenate((all_save_rollout_obsdict_eyeinhand_images, np.array(save_rollout_obsdict_eyeinhand_images)), axis=1)
-                #     all_save_rollout_obsdict_robot0s = np.concatenate((all_save_rollout_obsdict_robot0s, np.array(save_rollout_obsdict_robot0s)), axis=1)
-                #     all_save_rollout_actions = np.concatenate((all_save_rollout_actions, np.array(save_rollout_actions)), axis=1)
-                #     all_save_grasping = np.concatenate((all_save_grasping, np.array(env.call('is_grasping'))), axis=0)
-                #     all_save_reward = np.concatenate((all_save_reward, np.array(env.call('get_rewards'))), axis=0)
-                # if 'all_added_states' in locals():
-                #     all_added_states = np.vstack((all_added_states, np.array(added_state)))
-                # else:# 'added_state' in locals():
-                #     all_added_states = np.array(added_state)
-                #     del added_state
-                #     print('SAVING THINGS')
                 del save_rollout_obsdict_robot0_agentview_right_image
                 del save_rollout_obsdict_robot0_agentview_left_image
                 del save_rollout_obsdict_eyeinhand_images
@@ -538,19 +597,31 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             max_reward = np.max(all_rewards[i])
             max_rewards[prefix].append(max_reward)
             log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+            if classifier and self.show_classifier_scores:
+                log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
+                # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))
+                log_data[prefix+'a.cpgc_after'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_after[i]))
+                # log_data[prefix+'a.gc_after'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_after[i]))
             try:
                 object_cfgs=json.loads(all_objects[i]['ep_meta'])['object_cfgs']
             except:
                 print('HOLD UP could not save object info')
             for obj in object_cfgs:
                 if obj['name']=='obj':
-                    log_data[prefix+f'object_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
+                    log_data[prefix+f'xobject_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
             # visualize sim
             video_path = all_video_paths[i]
             if video_path is not None:
                 sim_video = wandb.Video(video_path)
                 log_data[prefix+f'sim_video_{seed}'] = sim_video
-        
+            if classifier and self.show_classifier_scores:
+                video_writer = cv2.VideoWriter(video_path[:-4]+'_cs.mp4', cv2.VideoWriter_fourcc(*'mp4v'), 30, (128, 128))
+                for frame_idx, frame in enumerate(all_video_frames[i]):
+                    text = str(frame_idx)+' : '+str(round(all_classification_scores1_before[i][frame_idx//4],3))+' -> '+ str(round(all_classification_scores1_after[i][frame_idx//4],3))
+                    frame= cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    cv2.putText(frame, text, (10, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 0, 0) , 1)
+                    video_writer.write(frame)
+                video_writer.release()
         # log aggregate metrics
         for prefix, value in max_rewards.items():
             name = prefix+'mean_score'

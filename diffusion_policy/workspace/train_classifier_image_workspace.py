@@ -36,7 +36,7 @@ from torch.autograd import grad
 
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
-class TrainClassifierWorkspace(BaseWorkspace):
+class TrainClassifierImageWorkspace(BaseWorkspace):
     include_keys = ['global_step', 'epoch']
     exclude_keys = tuple()
 
@@ -50,7 +50,7 @@ class TrainClassifierWorkspace(BaseWorkspace):
         random.seed(seed)
 
         # configure model
-        self.model: DiffusionClassifierHybridImagePolicy = hydra.utils.instantiate(cfg.policy)
+        self.model: DiffusionClassifierImagePolicy = hydra.utils.instantiate(cfg.policy)
 
         obs_encorder_lr = cfg.optimizer.lr
         # if cfg.policy.obs_encoder.rgb_model.weights is not None:
@@ -385,6 +385,10 @@ class TrainClassifierWorkspace(BaseWorkspace):
                     self.model.eval()  
                     valid_loss = list()
                     valid_accuracy = list()
+                    tp_list = list()
+                    tn_list = list()
+                    fp_list = list()
+                    fn_list = list()
                     with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
                         leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
                         for batch_idx, batch in enumerate(tepoch):
@@ -395,10 +399,26 @@ class TrainClassifierWorkspace(BaseWorkspace):
                             valid_loss.append(loss.item())
                             actual_out = (pred[:,0] > 0.5).float() * 1                            
                             equals = (batch['total_reward'][:,0].float()  ==  actual_out.t()) + 0.0
+                            tp = np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==1)[0]].sum()
+                            tn = np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==0)[0]].sum()
+                            fp = np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==0)[0]].shape[0] - np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==0)[0]].sum()
+                            fn = np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==1)[0]].shape[0]- np.array(equals.cpu().numpy())[np.where(np.array(batch['total_reward'].cpu().numpy())==1)[0]].sum()
+                            # precision = tp/(tp+fp+1e-12)
+                            # print('compare',precision,torch.mean(equals).cpu().numpy())
                             valid_accuracy.append(torch.mean(equals).cpu().numpy())
+                            tp_list.append(tp)
+                            tn_list.append(tn)
+                            fp_list.append(fp)
+                            fn_list.append(fn)
                     step_log['val_loss'] = np.mean(valid_loss)
                     step_log['valid_accuracy'] = np.mean(valid_accuracy)
+                    step_log['tp_list'] = np.mean(tp_list)
+                    step_log['tn_list'] = np.mean(tn_list)
+                    step_log['fp_list'] = np.mean(fp_list)
+                    step_log['fn_list'] = np.mean(fn_list)
                     
+                    # print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  \tTp: {:.6f} \tTn : {:.6f} \tFp : {:.6f}  \tFn : {:.6f} '  .format(
+                    #     self.epoch, train_loss, step_log['val_loss'], step_log['valid_accuracy'], step_log['tp_list'], step_log['tn_list'], step_log['fp_list'], step_log['fn_list']))
                     print('Epoch: {} \tTraining Loss: {:.6f} \tValidation Loss: {:.6f}  \tAccuracy: {:.6f}  '  .format(
                         self.epoch, train_loss, step_log['val_loss'], step_log['valid_accuracy']))
                     # recover the DDP model
@@ -504,12 +524,11 @@ class TrainClassifierWorkspace(BaseWorkspace):
             leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
             for batch_idx, batch in enumerate(tepoch):
                 # device transfer
-                pdb.set_trace()
                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
                 if 'total_reward' not in batch:
                     pdb.set_trace()
                 # compute loss
-                loss, pred = self.n.compute_loss(batch, return_raw_outputs=True)
+                loss, pred = self.model.compute_loss(batch, return_raw_outputs=True)
                 # print('pred>0.5', sum(pred>0.5))
                 train_loss.append(loss.item())
                 actual_out = (pred[:,0] > 0.5).float() * 1  
@@ -597,10 +616,9 @@ class TrainClassifierWorkspace(BaseWorkspace):
         #         total_1 += (batch['total_reward'] == 1).sum()
         # print('VALIDATION DATA WEIGHTED BALANCED', total_0, total_1)
 
+        device = self.model.device
         self.model.set_normalizer(normalizer)
         self.model.normalizer.to(device)
-
-        device = self.model.device
         self.model.eval()  
         valid_loss = list()
         valid_accuracy = list()

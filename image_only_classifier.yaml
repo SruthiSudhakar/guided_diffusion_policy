@@ -1,4 +1,4 @@
-_target_: diffusion_policy.workspace.train_classifier_workspace.TrainClassifierWorkspace
+_target_: diffusion_policy.workspace.train_classifier_image_workspace.TrainClassifierImageWorkspace
 checkpoint:
   save_last_ckpt: true
   save_last_snapshot: false
@@ -14,13 +14,6 @@ dataloader:
   pin_memory: true
   shuffle: false
 dataset_obs_steps: 2
-ema:
-  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
-  inv_gamma: 1.0
-  max_value: 0.9999
-  min_value: 0.0
-  power: 0.75
-  update_after_step: 0
 exp_name: default
 horizon: 16
 keypoint_visible_rate: 1.0
@@ -53,7 +46,7 @@ optimizer:
   weight_decay: 1.0e-06
 past_action_visible: false
 policy:
-  _target_: diffusion_policy.policy.diffusion_classifier_hybrid_image_policy.DiffusionClassifierHybridImagePolicy
+  _target_: diffusion_policy.policy.diffusion_classifier_image_policy.DiffusionClassifierImagePolicy
   cond_predict_scale: true
   crop_shape:
   - 76
@@ -78,7 +71,44 @@ policy:
     variance_type: fixed_small
   num_inference_steps: 100
   obs_as_global_cond: true
-  obs_encoder_group_norm: true
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb    
+    rgb_model:
+      _target_: diffusion_policy.model.vision.model_getter.get_resnet
+      name: resnet18
+      weights: IMAGENET1K_V1 # or r3m
+    resize_shape: [128, 128]
+    crop_shape: [126, 126]
+    random_crop: True
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
   shape_meta:
     action:
       shape:
@@ -105,15 +135,6 @@ policy:
         - 128
         - 128
         type: rgb
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      robot0_gripper_qpos:
-        shape:
-        - 2
 shape_meta:
   action:
     shape:
@@ -140,15 +161,6 @@ shape_meta:
       - 128
       - 128
       type: rgb
-    robot0_eef_pos:
-      shape:
-      - 3
-    robot0_eef_quat:
-      shape:
-      - 4
-    robot0_gripper_qpos:
-      shape:
-      - 2
 task:
   abs_action: false
   balance_dataset: false
@@ -188,15 +200,6 @@ task:
           - 128
           - 128
           type: rgb
-        robot0_eef_pos:
-          shape:
-          - 3
-        robot0_eef_quat:
-          shape:
-          - 4
-        robot0_gripper_qpos:
-          shape:
-          - 2
     use_cache: true
     val_ratio: 0.2
   dataset_path: data/robomimic/datasets/square/ph/image_abs.hdf5
@@ -228,15 +231,6 @@ task:
         - 128
         - 128
         type: rgb
-      robot0_eef_pos:
-        shape:
-        - 3
-      robot0_eef_quat:
-        shape:
-        - 4
-      robot0_gripper_qpos:
-        shape:
-        - 2
   task_name: square
 task_name: square_image
 training:
@@ -248,7 +242,7 @@ training:
   lr_warmup_steps: 500
   max_train_steps: null
   max_val_steps: null
-  num_epochs: 8000
+  num_epochs: 8001
   resume: false
   rollout_every: 50
   sample_every: 50

@@ -101,10 +101,10 @@ class RobomimicImageWrapper(gym.Env):
             # to be compatible with gym
             if self.env_model and self.ep_meta:
                 raw_obs = self.env.reset_to({'states': self.init_state, "model": self.env_model, "ep_meta": self.ep_meta})
-            elif self.ep_meta:
-                raw_obs = self.env.reset_to({'states': self.init_state, "ep_meta": self.ep_meta})
-                self.ep_meta = json.dumps(self.env.env._ep_meta)
-                self.env_model = self.env.env.sim.model.get_xml()
+            # elif self.ep_meta:
+            #     raw_obs = self.env.reset_to({'states': self.init_state, "ep_meta": self.ep_meta})
+            #     self.ep_meta = json.dumps(self.env.env._ep_meta)
+            #     self.env_model = self.env.env.sim.model.get_xml()
             else:
                 raw_obs = self.env.reset_to({'states': self.init_state})
         elif self._seed is not None:

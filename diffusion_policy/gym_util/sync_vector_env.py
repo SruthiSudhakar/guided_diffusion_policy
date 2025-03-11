@@ -5,6 +5,8 @@ from gym import logger
 from gym.vector.vector_env import VectorEnv
 from gym.vector.utils import concatenate, create_empty_array
 import pdb
+import time
+from termcolor import colored
 __all__ = ["SyncVectorEnv"]
 
 
@@ -26,28 +28,42 @@ class SyncVectorEnv(VectorEnv):
     """
 
     def __init__(self, env_fns, observation_space=None, action_space=None, copy=True):
+        self.start_time = time.time()
+
         self.env_fns = env_fns
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"1 et: {elapsed_time:.2f}",'magenta'))
         self.envs = [env_fn() for env_fn in env_fns]
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"2 et: {elapsed_time:.2f}",'magenta'))
         self.copy = copy
         self.metadata = self.envs[0].metadata
         if (observation_space is None) or (action_space is None):
             observation_space = observation_space or self.envs[0].observation_space
             action_space = action_space or self.envs[0].action_space
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"3 et: {elapsed_time:.2f}",'magenta'))
         super(SyncVectorEnv, self).__init__(
             num_envs=len(env_fns),
             observation_space=observation_space,
             action_space=action_space,
         )
 
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"4 et: {elapsed_time:.2f}",'magenta'))
         self._check_observation_spaces()
         self.observations = create_empty_array(
             self.single_observation_space, n=self.num_envs, fn=np.zeros
         )
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"5 et: {elapsed_time:.2f}",'magenta'))
         self._rewards = np.zeros((self.num_envs,), dtype=np.float64)
         self._dones = np.zeros((self.num_envs,), dtype=np.bool_)
         # self._rewards = [0] * self.num_envs
         # self._dones = [False] * self.num_envs
         self._actions = None
+        elapsed_time = time.time() - self.start_time
+        print(colored(f"6 et: {elapsed_time:.2f}",'magenta'))
 
     def seed(self, seeds=None):
         if seeds is None:

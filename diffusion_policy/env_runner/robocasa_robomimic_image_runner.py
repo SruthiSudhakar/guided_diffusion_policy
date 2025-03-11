@@ -384,7 +384,7 @@ class RobocasaRobomimicImageRunner(BaseImageRunner):
 
                 # run policy
                 with torch.no_grad():
-                    action_dict = policy.predict_action(obs_dict)
+                    action_dict, classifier_pred = policy.predict_action(obs_dict)
 
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
