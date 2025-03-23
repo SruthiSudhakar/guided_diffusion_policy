@@ -29,6 +29,8 @@ from termcolor import colored
 from robocasa.models.objects.kitchen_objects import OBJ_CATEGORIES, OBJ_GROUPS
 import cv2
 import time
+import json
+
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
@@ -88,8 +90,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             change_test_object_instances=False,
             init_state_none=False,
             debug=False,
+            choose_sample=False,
+            start_rollout_from_state=0,
             show_classifier_scores=False,
             adaptive_guidance='None',
+            decode_first=True,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -220,10 +225,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         with h5py.File(dataset_path, 'r') as f:
             embedding_idx=0
             for i in tqdm.tqdm(range(n_train)):
-                i=i % len(f['data'])
-                train_idx = train_start_idx + i
+                train_idx = train_start_idx + (i % len(f['data']))
                 enable_render = True
-                init_state = f[f'data/demo_{train_idx}/states'][0]
+                init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
                 language_goal_embedding = train_embeddings_list[embedding_idx]
@@ -242,7 +246,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.language_goal = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
-                            'trainmedia', str(train_idx) + "_" + wv.util.generate_id() + ".mp4")
+                            'trainmedia', str(train_idx) + "_" + str(train_start_idx + i) + "_" + wv.util.generate_id() + ".mp4")
                         filename.parent.mkdir(parents=False, exist_ok=True)
                         filename = str(filename)
                         env.env.file_path = filename
@@ -257,7 +261,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.reset()
                     # env.env.env.env.env.hard_reset=False
 
-                env_seeds.append(train_idx)
+                env_seeds.append(str(train_idx) + "_" + str(train_start_idx + i))
                 env_prefixs.append('train/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
 
@@ -284,11 +288,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         with h5py.File(dataset_path, 'r') as f:
             embedding_idx=0
             for i in tqdm.tqdm(range(n_test)):
-                i=i % len(f['data'])
                 seed = test_start_seed + i
                 enable_render = i < n_test_vis
-                test_idx = train_start_idx + i
-                init_state = f[f'data/demo_{test_idx}/states'][0]
+                test_idx = train_start_idx + (i % len(f['data']))
+                init_state = f[f'data/demo_{test_idx}/states'][start_rollout_from_state]
                 env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
                 ep_meta = json.loads(f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None))
                 if change_test_textures:
@@ -336,7 +339,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.language_goal = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
-                            'testmedia', str(test_idx) + "_" + wv.util.generate_id() + ".mp4")
+                            'testmedia', str(test_idx) + "_" + str(train_start_idx + i) + "_" + wv.util.generate_id() + ".mp4")
                         filename.parent.mkdir(parents=False, exist_ok=True)
                         filename = str(filename)
                         env.env.file_path = filename
@@ -358,19 +361,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     #     print('set the textures so it doesnt change going forwards')
                     # env.env.env.env.env.hard_reset=True
 
-                env_seeds.append(test_idx)
+                env_seeds.append(str(test_idx) + "_" + str(train_start_idx + i))
                 env_prefixs.append('test/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
-        self.start_time = time.time()
-        elapsed_time = time.time() - self.start_time
-        print(colored(f"1 et: {elapsed_time:.2f}",'green'))
+        # env = SyncVectorEnv(env_fns)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
 
-        if debug:
-            env = SyncVectorEnv(env_fns)
-        else:
-            env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
-        elapsed_time = time.time() - self.start_time
-        print(colored(f"2 et: {elapsed_time:.2f}",'green'))
         if save_stuff:
             self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
             self.datagrp =  self.data_file.create_group('data')
@@ -397,8 +393,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.save_stuff = save_stuff
         self.show_classifier_scores=show_classifier_scores
         self.adaptive_guidance=adaptive_guidance
+        self.decode_first=decode_first
+        self.debug=debug
+        self.choose_sample=choose_sample
 
-    def run(self, policy: BaseImagePolicy, classifier=None, guidance_scale=None, guided_towards=None):
+    def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -447,6 +446,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             pbar = tqdm.tqdm(total=self.max_steps, desc=f"Eval {env_name}Image {chunk_idx+1}/{n_chunks}", 
                 leave=False, mininterval=self.tqdm_interval_sec)
             
+            language_goal = env.call('get_env_metadata')[this_local_slice]
+            language_goal = [json.loads(x['ep_meta'])['lang'] for x in language_goal]
             done = False
             env_step_index = 0
             while not done:
@@ -469,13 +470,28 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         del obs_dict['robot0_eef_pos']
                         del obs_dict['robot0_eef_quat']
                         del obs_dict['robot0_gripper_qpos']
-                    if self.adaptive_guidance!='None':
-                        action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards, trajectory_step=env_step_index, adaptive_guidance=self.adaptive_guidance, max_steps=self.max_steps/self.n_action_steps, get_class_scores=self.show_classifier_scores)
-                    elif classifier:
-                        action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier, guidance_scale, guided_towards, get_class_scores=self.show_classifier_scores)
-                    else:
-                        action_dict, classifier_action_pred = policy.predict_action(obs_dict)
-
+                    if not self.choose_sample:
+                        if self.adaptive_guidance!='None':
+                            action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier_processor, classifier, grad_steps, guidance_scale, guided_towards, trajectory_step=env_step_index, adaptive_guidance=self.adaptive_guidance, max_steps=self.max_steps/self.n_action_steps, get_class_scores=self.show_classifier_scores, decode_first=self.decode_first, language_goal=language_goal)
+                        elif classifier:
+                            action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier_processor, classifier, grad_steps, guidance_scale, guided_towards, get_class_scores=self.show_classifier_scores, decode_first=self.decode_first, language_goal=language_goal)
+                        else:
+                            action_dict, classifier_action_pred = policy.predict_action(obs_dict)
+                    elif self.choose_sample:
+                        # resample
+                        print('resample')
+                        sample_many_actions=[]
+                        action_logits=[]
+                        pdb.set_trace()
+                        for i in range(10):
+                            sample_many_actions.append(policy.predict_action(obs_dict))
+                        pdb.set_trace()
+                        for sample in sample_many_actions:
+                            action_logits.append(policy.get_class_score(sample['action_pred'],obs_dict,classifier_processor,classifier,language_goal).item())
+                        pdb.set_trace()
+                        action_dict=sample_many_actions[np.argmax(np.array(action_logits))]
+                        pdb.set_trace()
+                        
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,
                     lambda x: x.detach().to('cpu').numpy())
@@ -534,6 +550,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # update pbar
                 pbar.update(extended_env_action.shape[1])
+                if self.debug:
+                    done=True
             pbar.close()
 
             # collect data for this round
@@ -576,6 +594,51 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 del save_rollout_obsdict_robot0s
                 del save_rollout_actions
                 del added_state
+            #log after every 2 chunks
+            if chunk_idx%2==0:
+                print('started saving rollouts')
+                max_rewards = collections.defaultdict(list)
+                log_data = dict()
+                for i in range(len(all_rewards)):
+                    if all_rewards[i]==None:
+                        continue
+                    seed = self.env_seeds[i]
+                    prefix = self.env_prefixs[i]
+                    max_reward = np.max(all_rewards[i])
+                    max_rewards[prefix].append(max_reward)
+                    log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+                    if classifier and self.show_classifier_scores:
+                        log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
+                        # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))
+                        log_data[prefix+'a.cpgc_after'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_after[i]))
+                        # log_data[prefix+'a.gc_after'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_after[i]))
+                    try:
+                        object_cfgs=json.loads(all_objects[i]['ep_meta'])['object_cfgs']
+                        for obj in object_cfgs:
+                            if obj['name']=='obj':
+                                log_data[prefix+f'xobject_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
+                    except:
+                        print('HOLD UP could not save object info')
+                    # visualize sim
+                    video_path = all_video_paths[i]
+                    if video_path is not None:
+                        sim_video = wandb.Video(video_path)
+                        log_data[prefix+f'sim_video_{seed}'] = sim_video
+                # log aggregate metrics
+                for prefix, value in max_rewards.items():
+                    name = prefix+'mean_score'
+                    value = np.mean(value)
+                    log_data[name] = value
+                json_log = dict()
+                for key, value in log_data.items():
+                    if isinstance(value, wandb.sdk.data_types.video.Video):
+                        json_log[key] = value._path
+                    else:
+                        json_log[key] = str(value)
+                out_path = os.path.join(self.output_dir, 'eval_log.json')
+                json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
+                print(f'saved chunk {chunk_idx}')
+
 
         # clear out video buffer
         _ = env.reset()
@@ -604,11 +667,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 # log_data[prefix+'a.gc_after'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_after[i]))
             try:
                 object_cfgs=json.loads(all_objects[i]['ep_meta'])['object_cfgs']
+                for obj in object_cfgs:
+                    if obj['name']=='obj':
+                        log_data[prefix+f'xobject_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
             except:
                 print('HOLD UP could not save object info')
-            for obj in object_cfgs:
-                if obj['name']=='obj':
-                    log_data[prefix+f'xobject_metadata{seed}'] = '/'.join(obj['info']['mjcf_path'].split('/')[-3:-1])
             # visualize sim
             video_path = all_video_paths[i]
             if video_path is not None:

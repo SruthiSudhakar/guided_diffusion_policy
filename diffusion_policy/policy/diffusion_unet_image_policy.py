@@ -11,6 +11,8 @@ from diffusion_policy.model.diffusion.conditional_unet1d import ConditionalUnet1
 from diffusion_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from diffusion_policy.model.vision.multi_image_obs_encoder import MultiImageObsEncoder
 from diffusion_policy.common.pytorch_util import dict_apply
+from prismatic.vla.action_tokenizer import ActionTokenizer
+from torchvision import transforms
 
 import pdb
 
@@ -88,7 +90,9 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             condition_data, condition_mask,
             local_cond=None, global_cond=None,
             generator=None, classifier_policy=None,
-            classifier_policy_global_cond=None,
+            classifier_processor=None,
+            image_obs=None, decode_first=True,
+            language_goal=None, grad_steps=None,
             guidance_scale=None, guided_towards=None,
             trajectory_step=None, adaptive_guidance=None,
             max_steps=None, get_class_scores=False,
@@ -117,74 +121,146 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             model_output = model(trajectory, t, 
                 local_cond=local_cond, global_cond=global_cond)
 
-
-            # if classifier_policy:
-            #     # 2.5 compute classifier graident
-            #     timesteps = torch.zeros(trajectory.shape[0], device=trajectory.device).long()+t
-            #     labels=torch.zeros(trajectory.shape[0]).unsqueeze(dim=-1).to(trajectory.device)+guided_towards
-            #     #compute the gradient which points in the direction of steepest ascent
-            #     guidance_gradient, cpoutput= classifier_policy.compute_classifier_gradient( trajectory,  global_cond=classifier_policy_global_cond, timesteps=timesteps, label=labels)
-            #     current_guidance_scale=float(guidance_scale)
-            #     if guidance_scale == 'variable':
-            #         #round_to_nearest_power_of_10
-            #         log10_guidance_scale = math.log10(abs((model_output.mean() / guidance_gradient.mean())))
-            #         nearest_power = round(log10_guidance_scale)
-            #         current_guidance_scale = 10 ** (nearest_power-1)
-            #     elif adaptive_guidance=='linear':
-            #         current_guidance_scale*=trajectory_step/max_steps
-            #     elif adaptive_guidance=='keypoints':
-            #         guidance_scales_list= [0]*100
-            #         guidance_scales_list[10:27]=[current_guidance_scale] * 17
-            #         guidance_scales_list[32:]=[current_guidance_scale] * (100-32)
-            #         current_guidance_scale = guidance_scales_list[trajectory_step]
-            #         # if current_guidance_scale>0:
-            #         #     pdb.set_trace()
-            #             # print('ts: ', trajectory_step, 'cgs', current_guidance_scale, 'model_output', model_output.mean(), 'guidance_gradient', guidance_gradient.mean() * float(current_guidance_scale))
-            #     model_output += float(current_guidance_scale) * guidance_gradient
-            if classifier_policy:
-                # 2.5 compute classifier graident
-                guidance_gradient, cpoutput= get_gla_score( trajectory, global_cond=classifier_policy_global_cond, timesteps=timesteps, label=labels)
+            # 3. compute previous image: x_t -> x_t-1
+            trajectory = scheduler.step( model_output, t, trajectory,  generator=generator, **kwargs  ).prev_sample
+            if t==0 and classifier_policy:
                 current_guidance_scale=float(guidance_scale)
-                if guidance_scale == 'variable':
-                    #round_to_nearest_power_of_10
-                    log10_guidance_scale = math.log10(abs((model_output.mean() / guidance_gradient.mean())))
-                    nearest_power = round(log10_guidance_scale)
-                    current_guidance_scale = 10 ** (nearest_power-1)
-                elif adaptive_guidance=='linear':
+                if adaptive_guidance=='linear':
                     current_guidance_scale*=trajectory_step/max_steps
-                elif adaptive_guidance=='keypoints':
+                if adaptive_guidance=='keypoints':
                     guidance_scales_list= [0]*100
                     guidance_scales_list[10:27]=[current_guidance_scale] * 17
                     guidance_scales_list[32:]=[current_guidance_scale] * (100-32)
                     current_guidance_scale = guidance_scales_list[trajectory_step]
-                    # if current_guidance_scale>0:
-                    #     pdb.set_trace()
-                        # print('ts: ', trajectory_step, 'cgs', current_guidance_scale, 'model_output', model_output.mean(), 'guidance_gradient', guidance_gradient.mean() * float(current_guidance_scale))
-                model_output += float(current_guidance_scale) * guidance_gradient
-            
-            if t==0 and classifier_policy and get_class_scores:
-                classifier_pred['classifier_policy_global_cond']['before']= nn.Sigmoid()(cpoutput)[:,0]
-                # classifier_pred['global_cond']['before']= nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=global_cond))[:,0]
-                # pdb.set_trace()
 
-            # 3. compute previous image: x_t -> x_t-1
-            trajectory = scheduler.step(
-                model_output, t, trajectory, 
-                generator=generator,
-                **kwargs
-                ).prev_sample
-        
-            if t==0 and classifier_policy and get_class_scores:
-                # pdb.set_trace()
-                classifier_pred['classifier_policy_global_cond']['after']= nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=classifier_policy_global_cond))[:,0]
+            if t==0 and classifier_policy and current_guidance_scale>0:
+                torch.set_grad_enabled(True)
+                action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
+                
+                prompts=[]
+                images=[]
+                for idx in range(trajectory.shape[0]):
+                    traj = trajectory[idx].cpu().numpy()
+                    action_tokens=action_tokenizer(traj)
+                    # action_tokens = [token.replace('\u202d', "ً") for token in action_tokens]
+                    action_tokens=' '.join(action_tokens)
+                    lang_idx = idx if idx<len(language_goal) else 0
+                    prompts.append(f"In: Will taking this sequence of actions lead the robot towards the goal of {language_goal[lang_idx]}? The actions are: {action_tokens}\nOut: ")
+                    images.append(transforms.ToPILImage()(image_obs['robot0_eye_in_hand_image'][idx]))
+                try:
+                    tokenized_inputs=classifier_processor(prompts, images, padding=True, truncation=True,).to(classifier_policy.device, dtype=torch.bfloat16)
+                except:
+                    print('hey something wrong')
+                    pdb.set_trace()
+                input_embeddings=None
+                for i in range(grad_steps):
+                    torch.set_grad_enabled(True)
+                    #get input imbeddings, then run through model and get output logits
+                    cpoutput = classifier_policy(input_ids=tokenized_inputs['input_ids'], attention_mask=tokenized_inputs["attention_mask"], pixel_values=tokenized_inputs['pixel_values'], inputs_embeds=input_embeddings, return_dict=True)
+
+                    action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :]
+                    last_valid_indices = tokenized_inputs["attention_mask"].sum(axis=1) - 1  # Get last valid token index
+                    batch_indices = torch.arange(tokenized_inputs["attention_mask"].size(0))  # [0, 1, 2, ..., batch_size-1]
+                    print(f'{current_guidance_scale} {i}/{grad_steps} action_preds:', action_logits.argmax(dim=-1)[batch_indices,last_valid_indices])
+                    # #get gradient of the "class 1" token wrt to the input embeddings (torch.Size([1, 195, 4096]))
+                    grad = torch.autograd.grad(action_logits[batch_indices,last_valid_indices,classifier_processor.tokenizer.vocab[str(int(guided_towards))]].sum(), cpoutput.input_embeddings)[0] #Returns a tensor of the same shape as input_embeddings, containing how much each embedding contributes to the selected logits
+
+                    # #add the gradient of the input embeddings to the original input embedding to get a modified embedding
+                
+                    if decode_first:
+                        print('decoding first')
+                        input_embeddings = grad 
+                    else:
+                        print('adding first')
+                        input_embeddings = cpoutput.input_embeddings + float(current_guidance_scale) * grad # torch.Size([1, 195, 4096])
+                
+                modified_actions_embedded=input_embeddings
+                #get the token ids of the modified embeddings                
+                embedding_matrix =classifier_policy.language_model.model.embed_tokens.weight
+                similarities = torch.matmul(modified_actions_embedded, embedding_matrix.T)
+                modified_action_tokens = torch.argmax(similarities, dim=-1)  # Get most similar token ID
+
+                #mask the modified actions to only places where actions were in the input
+                actions_in_gt=tokenized_inputs['input_ids'].to(classifier_policy.device) #torch.Size([1, 195])
+                action_mask = (actions_in_gt > action_tokenizer.action_token_begin_idx) & (actions_in_gt <= (action_tokenizer.action_token_begin_idx + action_tokenizer.vocab_size))
+                modified_action_tokens = modified_action_tokens[action_mask]
+
+                #detokenize the actions back to numbers
+                modified_actions_detokenized =  action_tokenizer.decode_token_ids_to_actions(modified_action_tokens.cpu().numpy())
+                
+                shape,device, dtype= trajectory.shape, trajectory.device, trajectory.dtype
+                if decode_first:
+                    old_mean=trajectory.mean()
+                    trajectory += float(current_guidance_scale) * torch.tensor(modified_actions_detokenized).to(device).to(dtype=dtype).reshape(trajectory.shape)
+                    print('diff: ', old_mean, trajectory.mean())
+                else:
+                    og_action_tokens=tokenized_inputs['input_ids'][action_mask]
+                    print('diff: ', (modified_action_tokens-og_action_tokens).to(torch.float32).mean())
+                    trajectory = torch.tensor(modified_actions_detokenized).to(device).to(dtype=dtype).reshape(trajectory.shape)
+
+
+
+
+                # action_norm_stats = classifier_policy.get_action_stats('roboturk')
+                # norm_mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+                # action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+                # actions = np.where( norm_mask, 0.5 * (modified_actions_detokenized + 1) * (action_high - action_low) + action_low, modified_actions_detokenized, )
+
+                # gtactions = tokenized_inputs['input_ids'][action_mask]
+                # gtactions = action_tokenizer.decode_token_ids_to_actions(gtactions.cpu().numpy())
+
+                # #convert it back to the trajectory shape
+                # gtactions = torch.tensor(gtactions.reshape(shape)).to(dtype=dtype)
+
+                # #unnormalize actions
+                # action_norm_stats = classifier_policy.get_action_stats('robocasa_chunk_v1_p1')
+                # mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+                # action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+                # actions = np.where(mask,0.5 * (gtactions + 1) * (action_high - action_low) + action_low,gtactions,)
+
+            # if t==0 and classifier_policy and get_class_scores:
+                classifier_pred['classifier_policy_global_cond']['before']= action_logits.argmax(dim=2)#nn.Sigmoid()(cpoutput)[:,0]
+                classifier_pred['classifier_policy_global_cond']['after']= action_logits.argmax(dim=2) #nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=classifier_policy_global_cond))[:,0]
 
         # finally make sure conditioning is enforced
-        trajectory[condition_mask] = condition_data[condition_mask]        
+        trajectory[condition_mask] = condition_data[condition_mask].to(trajectory.dtype)        
 
         return trajectory, classifier_pred
 
+    def get_class_score(self, trajectory, obs_dict: Dict[str, torch.Tensor], classifier_processor=None, classifier_policy=None, language_goal=None) -> Dict[str, torch.Tensor]:
+            with torch.no_grad():
+                nobs = self.normalizer.normalize(obs_dict)
+                image_obs=dict_apply(nobs, lambda x: x[:,-1,...])
+                torch.set_grad_enabled(True)
+                action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
+                    
+                prompts=[]
+                images=[]
+                for idx in range(trajectory.shape[0]):
+                    traj = trajectory[idx].cpu().numpy()
+                    action_tokens=action_tokenizer(traj)
+                    # action_tokens = [token.replace('\u202d', "ً") for token in action_tokens]
+                    action_tokens=' '.join(action_tokens)
+                    lang_idx = idx if idx<len(language_goal) else 0
+                    prompts.append(f"In: Will taking this sequence of actions lead the robot towards the goal of {language_goal[lang_idx]}? The actions are: {action_tokens}\nOut: ")
+                    images.append(transforms.ToPILImage()(image_obs['robot0_eye_in_hand_image'][idx]))
+                try:
+                    tokenized_inputs=classifier_processor(prompts, images, padding=True, truncation=True,).to(classifier_policy.device, dtype=torch.bfloat16)
+                except:
+                    print('hey something wrong')
+                cpoutput = classifier_policy(input_ids=tokenized_inputs['input_ids'], attention_mask=tokenized_inputs["attention_mask"], pixel_values=tokenized_inputs['pixel_values'], return_dict=True)
+                action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :]
+                last_valid_indices = tokenized_inputs["attention_mask"].sum(axis=1) - 1  # Get last valid token index
+                batch_indices = torch.arange(tokenized_inputs["attention_mask"].size(0))  # [0, 1, 2, ..., batch_size-1]
+                guided_towards=1
+                pdb.set_trace()
+                print(f'action_preds:', action_logits.argmax(dim=-1)[batch_indices,last_valid_indices])
+                return action_logits[batch_indices,last_valid_indices,classifier_processor.tokenizer.vocab[str(int(guided_towards))]]
 
-    def predict_action(self, obs_dict: Dict[str, torch.Tensor], classifier_policy=None, guidance_scale=None, guided_towards=None, trajectory_step=None, adaptive_guidance=None, max_steps=None, get_class_scores=False) -> Dict[str, torch.Tensor]:
+
+
+    
+    def predict_action(self, obs_dict: Dict[str, torch.Tensor], classifier_processor=None, classifier_policy=None, grad_steps=None, guidance_scale=None, guided_towards=None, trajectory_step=None, adaptive_guidance=None, max_steps=None, get_class_scores=False, decode_first=True, language_goal=None) -> Dict[str, torch.Tensor]:
         """
         obs_dict: must include "obs" key
         result: must include "action" key
@@ -215,10 +291,6 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             # empty data for action
             cond_data = torch.zeros(size=(B, T, Da), device=device, dtype=dtype)
             cond_mask = torch.zeros_like(cond_data, dtype=torch.bool)
-            classifier_policy_global_cond=None
-            if classifier_policy:
-                classifier_policy_nobs_features = classifier_policy.obs_encoder(this_nobs)
-                classifier_policy_global_cond = classifier_policy_nobs_features.reshape(B, -1)
         else:
             # condition through impainting
             this_nobs = dict_apply(nobs, lambda x: x[:,-To:,...].reshape(-1,*x.shape[2:]))
@@ -237,7 +309,11 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             local_cond=local_cond,
             global_cond=global_cond,
             classifier_policy=classifier_policy,
-            classifier_policy_global_cond=classifier_policy_global_cond,
+            classifier_processor=classifier_processor,
+            image_obs=dict_apply(nobs, lambda x: x[:,-1,...]),
+            decode_first=decode_first,
+            language_goal=language_goal,
+            grad_steps=grad_steps,
             guidance_scale=guidance_scale,
             guided_towards=guided_towards,
             trajectory_step=trajectory_step,
@@ -399,58 +475,3 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         loss = reduce(loss, 'b ... -> b', 'mean')
         loss = loss.mean()
         return loss
-    def get_vla_score(vla, processor, base_vla_name, obs, task_label, unnorm_key, center_crop=False):
-        """Generates an action with the VLA policy."""
-        image = resize_image(obs["full_image"])
-        image = Image.fromarray(image)
-        image = image.convert("RGB")
-
-        # (If trained with image augmentations) Center crop image and then resize back up to original size.
-        # IMPORTANT: Let's say crop scale == 0.9. To get the new height and width (post-crop), multiply
-        #            the original height and width by sqrt(0.9) -- not 0.9!
-        if center_crop:
-            batch_size = 1
-            crop_scale = 0.9
-
-            # Convert to TF Tensor and record original data type (should be tf.uint8)
-            image = tf.convert_to_tensor(np.array(image))
-            orig_dtype = image.dtype
-
-            # Convert to data type tf.float32 and values between [0,1]
-            image = tf.image.convert_image_dtype(image, tf.float32)
-
-            # Crop and then resize back to original size
-            image = crop_and_resize(image, crop_scale, batch_size)
-
-            # Convert back to original data type
-            image = tf.clip_by_value(image, 0, 1)
-            image = tf.image.convert_image_dtype(image, orig_dtype, saturate=True)
-
-            # Convert back to PIL Image
-            image = Image.fromarray(image.numpy())
-            image = image.convert("RGB")
-
-        # Build VLA prompt
-        prompt = f"In: Will taking this sequence of actions lead the robot towards the goal of {lang}? The actions are: {action_tokens}?\nOut:"
-
-        # Process inputs.
-        inputs = processor(prompt, image).to(DEVICE, dtype=torch.bfloat16)
-
-        # Get action.
-        action = vla.predict_action(**inputs, unnorm_key=unnorm_key, do_sample=False)
-        return action
-    def resize_image(img, resize_size):
-        """
-        Takes numpy array corresponding to a single image and returns resized image as numpy array.
-
-        NOTE (Moo Jin): To make input images in distribution with respect to the inputs seen at training time, we follow
-                        the same resizing scheme used in the Octo dataloader, which OpenVLA uses for training.
-        """
-        assert isinstance(resize_size, tuple)
-        # Resize to image size expected by model
-        img = tf.image.encode_jpeg(img)  # Encode as JPEG, as done in RLDS dataset builder
-        img = tf.io.decode_image(img, expand_animations=False, dtype=tf.uint8)  # Immediately decode back
-        img = tf.image.resize(img, resize_size, method="lanczos3", antialias=True)
-        img = tf.cast(tf.clip_by_value(tf.round(img), 0, 255), tf.uint8)
-        img = img.numpy()
-        return img

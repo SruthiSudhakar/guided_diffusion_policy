@@ -31,11 +31,7 @@ class SyncVectorEnv(VectorEnv):
         self.start_time = time.time()
 
         self.env_fns = env_fns
-        elapsed_time = time.time() - self.start_time
-        print(colored(f"1 et: {elapsed_time:.2f}",'magenta'))
         self.envs = [env_fn() for env_fn in env_fns]
-        elapsed_time = time.time() - self.start_time
-        print(colored(f"2 et: {elapsed_time:.2f}",'magenta'))
         self.copy = copy
         self.metadata = self.envs[0].metadata
         if (observation_space is None) or (action_space is None):
