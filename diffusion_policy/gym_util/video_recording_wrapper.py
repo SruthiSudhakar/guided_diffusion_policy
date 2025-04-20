@@ -42,6 +42,7 @@ class VideoRecordingWrapper(gym.Wrapper):
 
             frame = self.env.render(
                 mode=self.mode, **self.render_kwargs)
+            frame = np.concatenate(frame, axis=1)  # concatenate horizontally
             assert frame.dtype == np.uint8
             self.video_recoder.write_frame(frame)
             self.frames.append(frame)

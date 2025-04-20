@@ -6,72 +6,58 @@ export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 export HYDRA_FULL_ERROR=1
 
-Usage:      
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:3 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-                --n_envs 2 \
-                --n_train 1 \
-                --n_test 1 \
-                --add test \
-                --classifier_dir /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.17/03.17.17.05.56_cv16_jgd/openvla-7b+chunk_mixture1_jgd+b800+lr-0.0005+lora-r16+dropout-0.0--image_aug--90_chkpt \
-                --choose_sample \
-                --debug 
-                
+Usage:
+cv17
  python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:5 \
+                --device cuda:0 \
                 --robocasa \
                 --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_train_no_kbpctk \
-                --n_envs 256 \
-                --n_train 2490 \
-                --n_test 1 \
-                --add midway_rollout_196 \
-                --start_rollout_from_state 196 \
-                --save
+                --list_dataset_path PnPSinkToCounter \
+                --n_envs 50 \
+                --n_train 5 \
+                --n_test 45 \
+                --start_rollout_from_state 140 \
+                --prefix_dir apr15_classifier \
+                --max_steps 200 \
+                --add mr140_demos5_cs10 \
+                --choose_sample \
+                --num_samples 10 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_2025-04-14_15-46-23/best_path.pth 
 
-                --classifier_dir /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.17/03.17.17.05.56_cv16_jgd/openvla-7b+chunk_mixture1_jgd+b800+lr-0.0005+lora-r16+dropout-0.0--image_aug--90_chkpt \
-                --guidance_scale 2 \
-                --guided_towards 0 \
-                --decode_first False \
-                --grad_steps 1 \
 
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:5 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-                --n_envs 16 \
-                --n_train 15 \
-                --n_test 1 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.17/03.17.17.05.56_cv16_jgd/openvla-7b+chunk_mixture1_jgd+b800+lr-0.0005+lora-r16+dropout-0.0--image_aug--90_chkpt \
-                --guidance_scale 1 \
-                --guided_towards 1 \
-                --decode_first False \
-                --adaptive_guidance linear \
-                --add add_first_16
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:5 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_secondhalf \
-                --n_envs 16 \
-                --n_train 256 \
-                --n_test 1 \
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
                 --device cuda:0 \
                 --robocasa \
                 --change_test_textures \
                 --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_secondhalf \
-                --n_envs 1 \
-                --n_train 1 \
+                --n_envs 64 \
+                --n_train 253 \
                 --n_test 1 \
-                --add test_sampling
+                --start_rollout_from_state 140 \
+                --prefix_dir apr15_classifier \
+                --max_steps 200 \
+                --choose_sample \
+                --num_samples 1 \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_2025-04-14_15-46-23/best_path.pth \
+                --add mr140_d253_cs1
+
+ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+                --device cuda:0 \
+                --robocasa \
+                --change_test_textures \
+                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_secondhalf \
+                --n_envs 127 \
+                --n_train 253 \
+                --n_test 1 \
+                --start_rollout_from_state 140 \
+                --prefix_dir apr14_classifier \
+                --max_steps 200 \
+                --add test_guidance \
+                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_5/best_path.pth \
+                --guidance_scale 0.001 \
+                --guided_towards 1
+                
+
 """
 # 
 # /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
@@ -110,13 +96,33 @@ from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from types import SimpleNamespace
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+
+class SimpleClassifier(nn.Module):
+    def __init__(self, input_dim=65):
+        super(SimpleClassifier, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)            
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
 @click.command()
 @click.option('-checkpoint', '--checkpoint', required=True)
 @click.option('-list_dataset_path', '--list_dataset_path', required=False)
 @click.option('-o', '--output_dir', required=False)
 @click.option('-classifier_dir', '--classifier_dir', required=False)
 @click.option('-grad_steps', '--grad_steps', default=1)
-@click.option('-guidance_scale', '--guidance_scale', default=0)
+@click.option('-guidance_scale', '--guidance_scale', default='0')
 @click.option('-guided_towards', '--guided_towards', default=1)
 @click.option('-d', '--device', default='cuda:0')
 @click.option('-max_steps', '--max_steps', default=None, type=int)
@@ -126,6 +132,7 @@ from types import SimpleNamespace
 @click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default=None)
 @click.option('-add', '--add', default='')
+@click.option('-prefix_dir', '--prefix_dir', default='')
 @click.option('-save', '--save', is_flag=True)
 @click.option('-robocasa', '--robocasa', is_flag=True)
 @click.option('-change_test_textures', '--change_test_textures', is_flag=True)
@@ -134,12 +141,13 @@ from types import SimpleNamespace
 @click.option('-init_state_none', '--init_state_none', is_flag=True)
 @click.option('-debug', '--debug', is_flag=True)
 @click.option('-choose_sample', '--choose_sample', is_flag=True)
+@click.option('-num_samples', '--num_samples', default=1)
 @click.option('-start_rollout_from_state', '--start_rollout_from_state', default=0)
 @click.option('-show_classifier_scores', '--show_classifier_scores', is_flag=True)
 @click.option('-adaptive_guidance', '--adaptive_guidance', default='None')
-@click.option('-decode_first', '--decode_first', default=True)
+@click.option('-decode_first', '--decode_first', is_flag=False)
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first):
     # Extract the value for task.dataset_path
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
     with open(yaml_file, 'r') as file:
@@ -175,16 +183,18 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 max_steps.append(data['data'][i]['actions'].shape[0]+50)
             print('max_steps',max(max_steps))
             data.close()    
-        
+            max_steps=max(max_steps)
         current_time = datetime.datetime.now()
 
         if not choose_sample and classifier_dir:
             if adaptive_guidance!='None':
-                output_dir+=f'{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}_{adaptive_guidance}'
+                output_dir+=f'{prefix_dir}/{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}_{adaptive_guidance}'
             else:
-                output_dir+=f'{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}'
+                output_dir+=f'{prefix_dir}/{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}'
+        elif choose_sample:
+            output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}_choose_sample_{choose_sample}_num_samples_{num_samples}'
         else:
-            output_dir+=f'{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}'
+            output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}'
         if os.path.exists(output_dir):
             click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
         pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -193,11 +203,11 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         with open (output_dir+'/save_some_deets.txt', 'w') as f: 
             deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', \
                 dataset_path, 'classifier_dir', classifier_dir, 'grad_steps', grad_steps, 'guidance_scale', \
-                guidance_scale, 'guided_towards', guided_towards, 'max_steps', max(max_steps), \
+                guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, \
                 'object',object, 'n_train', n_train, 'n_test', n_test, "n_envs", n_envs, \
                 'test_start_seed', test_start_seed, 'change_test_objects', change_test_objects, \
                 'change_test_textures', change_test_textures, 'change_test_object_instances', \
-                change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'test init_state_none', init_state_none, \
+                change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state]
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
@@ -225,6 +235,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['change_test_object_instances']= change_test_object_instances
             cfg['task']['env_runner']['debug']=debug
             cfg['task']['env_runner']['choose_sample']=choose_sample
+            cfg['task']['env_runner']['num_samples']=num_samples
             cfg['task']['env_runner']['start_rollout_from_state']=start_rollout_from_state
             cfg['task']['env_runner']['init_state_none']=init_state_none
             cfg['task']['env_runner']['show_classifier_scores']=show_classifier_scores
@@ -234,7 +245,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         cfg['task']['dataset_path'] = dataset_path
         cfg['task']['env_runner']['dataset_path'] = dataset_path
         cfg['task']['dataset']['dataset_path'] = dataset_path
-        cfg['task']['env_runner']['max_steps'] = max(max_steps)
+        cfg['task']['env_runner']['max_steps'] = max_steps
         cfg['task']['env_runner']['n_train'] = int(n_train)
         cfg['task']['env_runner']['n_train_vis'] = int(n_train)
         cfg['task']['env_runner']['n_test'] = int(n_test)
@@ -271,27 +282,31 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             # classifier_policy = classifier_workspace.model    
             # classifier_policy.to(device)
             # classifier_policy.eval()
-            processor_cfg = {
-                "pretrained_checkpoint": classifier_dir,
-                "load_in_4bit": False,
-                "load_in_8bit": False,
-                "device": device,
-            }
-            processor_cfg=SimpleNamespace(**processor_cfg)
-            classifier_processor = get_processor(processor_cfg)
-            classifier_policy = get_vla(processor_cfg)
-            classifier_policy.to(device)
-            classifier_policy.eval()
-            for name, param in classifier_policy.named_parameters():
-                if "embed_tokens" in name:  # Common names for embeddings
-                    print(f"Found embedding layer: {name}")
-                    param.requires_grad = True
+            # processor_cfg = {
+            #     "pretrained_checkpoint": classifier_dir,
+            #     "load_in_4bit": False,
+            #     "load_in_8bit": False,
+            #     "device": device,
+            # }
+            # processor_cfg=SimpleNamespace(**processor_cfg)
+            # classifier_processor = get_processor(processor_cfg)
+            # classifier_policy = get_vla(processor_cfg)
+            # classifier_policy.to(device)
+            # classifier_policy.eval()
+            # for name, param in classifier_policy.named_parameters():
+            #     if "embed_tokens" in name:  # Common names for embeddings
+            #         print(f"Found embedding layer: {name}")
+            #         param.requires_grad = True
             # run eval
             env_runner = hydra.utils.instantiate(cfg.task.env_runner,output_dir=output_dir)
-            if isinstance(guidance_scale, str):
-                runner_log= env_runner.run(policy, classifier_processor, classifier_policy, int(grad_steps), guidance_scale, float(guided_towards))
-            else:
-                runner_log= env_runner.run(policy, classifier_processor, classifier_policy, int(grad_steps), float(guidance_scale), float(guided_towards))
+            # if isinstance(guidance_scale, str):
+            #     runner_log= env_runner.run(policy, classifier_processor, classifier_policy, int(grad_steps), guidance_scale, float(guided_towards))
+            # else:
+            #     runner_log= env_runner.run(policy, classifier_processor, classifier_policy, int(grad_steps), float(guidance_scale), float(guided_towards))
+            classifier_policy = SimpleClassifier().to(device)
+            classifier_policy.load_state_dict(torch.load(classifier_dir))
+            classifier_policy.eval()
+            runner_log= env_runner.run(policy, classifier=classifier_policy, guidance_scale=float(guidance_scale), guided_towards=float(guided_towards))
         else:
             # run eval
             env_runner = hydra.utils.instantiate(
@@ -310,6 +325,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
         out_path = os.path.join(output_dir, 'jgddone.json')
         json.dump({'done':'JGD done'}, open(out_path, 'w'), indent=2, sort_keys=True)
+        print('done. output_dir:', output_dir)
 
 if __name__ == '__main__':
     main()

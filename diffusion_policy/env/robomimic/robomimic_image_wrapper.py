@@ -8,6 +8,9 @@ from robomimic.envs.env_robosuite import EnvRobosuite
 import pdb
 from termcolor import colored
 import json
+import cv2
+import numpy as np
+
 class RobomimicImageWrapper(gym.Env):
     def __init__(self, 
         env: EnvRobosuite,
@@ -62,6 +65,8 @@ class RobomimicImageWrapper(gym.Env):
             else:
                 raise RuntimeError(f"Unsupported type {key}")
             
+            if shape==[3,128,128]:
+                shape==[3,256,256]
             this_space = spaces.Box(
                 low=min_value,
                 high=max_value,
@@ -76,10 +81,12 @@ class RobomimicImageWrapper(gym.Env):
         if raw_obs is None:
             raw_obs = self.env.get_observation()
         
-        self.render_cache = raw_obs[self.render_obs_key]
-
+        self.render_obs_key=['robot0_agentview_left_image', 'robot0_agentview_right_image', 'robot0_eye_in_hand_image']
+        self.render_cache = [raw_obs[x] for x in self.render_obs_key]
         obs = dict()
         for key in self.observation_space.keys():
+            if key in self.render_obs_key:
+                raw_obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), (128, 128), interpolation=cv2.INTER_AREA).transpose(2,0,1)
             if key=='language_goal':
                 #TODO: what if we change the language goal? this should not return the old language goal then.
                 raw_obs['language_goal'] = self.language_goal
@@ -136,8 +143,7 @@ class RobomimicImageWrapper(gym.Env):
     def render(self, mode='rgb_array'):
         if self.render_cache is None:
             raise RuntimeError('Must run reset or step before render.')
-        img = np.moveaxis(self.render_cache, 0, -1)
-        img = (img * 255).astype(np.uint8)
+        img = [(np.moveaxis(x, 0, -1)* 255).astype(np.uint8) for x in self.render_cache]
         return img
 
     def is_grasping(self):
@@ -159,6 +165,8 @@ class RobomimicImageWrapper(gym.Env):
     def get_env_state(self):
         return self.env.get_state()['states']
 
+    def get_raw_observations(self):
+        return self.env.env._get_observations()
 def test():
     import os
     from omegaconf import OmegaConf

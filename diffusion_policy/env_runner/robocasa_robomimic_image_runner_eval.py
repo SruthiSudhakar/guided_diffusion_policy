@@ -30,6 +30,7 @@ from robocasa.models.objects.kitchen_objects import OBJ_CATEGORIES, OBJ_GROUPS
 import cv2
 import time
 import json
+import torch.nn.functional as F
 
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
@@ -91,10 +92,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             init_state_none=False,
             debug=False,
             choose_sample=False,
+            num_samples=10,
             start_rollout_from_state=0,
             show_classifier_scores=False,
             adaptive_guidance='None',
             decode_first=True,
+            take_first_n_train_samples=False,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -364,8 +367,21 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 env_seeds.append(str(test_idx) + "_" + str(train_start_idx + i))
                 env_prefixs.append('test/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
-        # env = SyncVectorEnv(env_fns)
-        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
+        self.debug=debug
+        if self.debug:
+            # env = SyncVectorEnv(env_fns)
+            pdb.set_trace()
+            """
+            from scipy.spatial.transform import Rotation as R
+            temp=env.envs[0].env.env.env.env._observables
+            rot = R.from_quat(temp['robot0_base_quat'])
+            R_base_to_world = rot.as_matrix()
+            eef_offset_world = R_base_to_world @ temp['robot0_base_to_eef_pos']
+            assert np.allclose(temp['robot0_eef_pos'] , temp['robot0_base_pos']+eef_offset_world, atol=1e-6)
+
+            """
+        else:
+            env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
 
         if save_stuff:
             self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
@@ -394,8 +410,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.show_classifier_scores=show_classifier_scores
         self.adaptive_guidance=adaptive_guidance
         self.decode_first=decode_first
-        self.debug=debug
         self.choose_sample=choose_sample
+        self.num_samples=num_samples
+        self.start_rollout_from_state=start_rollout_from_state
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -460,9 +477,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         :,-(self.n_obs_steps-1):].astype(np.float32)
                 
                 # device transfer
-                obs_dict = dict_apply(np_obs_dict, 
-                    lambda x: torch.from_numpy(x).to(
-                        device=device))
+                obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
 
                 # run policy
                 with torch.no_grad():
@@ -471,6 +486,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         del obs_dict['robot0_eef_quat']
                         del obs_dict['robot0_gripper_qpos']
                     if not self.choose_sample:
+                        obs_for_classifier=['robot0_eef_pos', 'obj_pos', 'container_pos']
+                        get_raw_obs=env.call('get_raw_observations')
+                        concat_obs_list = [torch.tensor(np.vstack([x[key] for x in get_raw_obs]), dtype=torch.float32) for key in obs_for_classifier]
+                        classifier_processor = torch.cat(concat_obs_list, dim=1)  # Shape: (B, D)
+
                         if self.adaptive_guidance!='None':
                             action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier_processor, classifier, grad_steps, guidance_scale, guided_towards, trajectory_step=env_step_index, adaptive_guidance=self.adaptive_guidance, max_steps=self.max_steps/self.n_action_steps, get_class_scores=self.show_classifier_scores, decode_first=self.decode_first, language_goal=language_goal)
                         elif classifier:
@@ -479,22 +499,62 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             action_dict, classifier_action_pred = policy.predict_action(obs_dict)
                     elif self.choose_sample:
                         # resample
-                        print('resample')
-                        sample_many_actions=[]
-                        action_logits=[]
-                        pdb.set_trace()
-                        for i in range(10):
-                            sample_many_actions.append(policy.predict_action(obs_dict))
-                        pdb.set_trace()
-                        for sample in sample_many_actions:
-                            action_logits.append(policy.get_class_score(sample['action_pred'],obs_dict,classifier_processor,classifier,language_goal).item())
-                        pdb.set_trace()
-                        action_dict=sample_many_actions[np.argmax(np.array(action_logits))]
-                        pdb.set_trace()
+                        print('chose_sample from ',self.num_samples)
+                        diffusion_batch_size=obs_dict['language_goal'].shape[0]
+                        classifier_batch_size=8192
+                        # reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(self.num_samples, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128
+                        # action = policy.predict_action(reshaped_obs_dict)[0]['action'] #action outputs are batch_sizex8x7
+                        obs_for_classifier=['robot0_eef_pos', 'obj_pos', 'container_pos']
+                        get_raw_obs=env.call('get_raw_observations')
+                        concat_obs_list = [torch.tensor(np.vstack([x[key] for x in get_raw_obs]), dtype=torch.float32) for key in obs_for_classifier]
+                        concated_current_obs = torch.cat(concat_obs_list, dim=1)  # Shape: (B, D)
+                        assert concated_current_obs.shape[0]==obs_dict['language_goal'].shape[0]
+
+                        sampled_actions = []
+                        all_action_logits=[]
+
+                        temp_chunk = classifier_batch_size/self.num_samples
+                        numberof_samples_to_process_at_a_time = classifier_batch_size if temp_chunk <= 1 else self.num_samples
+                        numberof_diffusion_batches_to_process_at_a_time = 1 if temp_chunk <= 1 else math.floor(temp_chunk)
+                        print(numberof_diffusion_batches_to_process_at_a_time,numberof_samples_to_process_at_a_time)
                         
+                        print('STARTED getting action preds')
+                        for i_dpbatch in tqdm.tqdm(range(0, diffusion_batch_size, numberof_diffusion_batches_to_process_at_a_time), desc="Diffusion Batches"):
+                            curr_diffusion_batch_start = i_dpbatch * numberof_diffusion_batches_to_process_at_a_time
+                            curr_diffusion_batch_end = (i_dpbatch+1)* numberof_diffusion_batches_to_process_at_a_time
+                            # obs_chunk = dict_apply(obs_dict, lambda x: x[curr_diffusion_batch_start:curr_diffusion_batch_end].repeat_interleave(numberof_samples_to_process_at_a_time, dim=0))
+                            for i_samplebatch in tqdm.tqdm(range(0,self.num_samples, numberof_samples_to_process_at_a_time), desc="Sampling Actions", leave=False):
+        
+                                num_samples_repeat=min(numberof_samples_to_process_at_a_time,self.num_samples-i_samplebatch)
+                                if num_samples_repeat!=numberof_samples_to_process_at_a_time:
+                                    print('just wanted to check on this')
+                                    pdb.set_trace()
+                                    print('just wanted to check on this')
+                                obs_chunk = dict_apply(obs_dict, lambda x: x[curr_diffusion_batch_start:curr_diffusion_batch_end].unsqueeze(1).expand(-1, num_samples_repeat, *x.shape[1:]).reshape(-1, *x.shape[1:]))
+                                repeated_obs = concated_current_obs[curr_diffusion_batch_start:curr_diffusion_batch_end].unsqueeze(1).expand(-1, num_samples_repeat, *concated_current_obs.shape[1:]).reshape(-1, *concated_current_obs.shape[1:])
+                                pdb.set_trace()
+                                action_chunk = policy.predict_action(obs_chunk)[0]['action']
+                                sampled_actions.append(action_chunk.detach().cpu())
+                                flattened_actions=action_chunk.view(-1, action_chunk.shape[1] * action_chunk.shape[2])
+                                classifier_inputs = torch.cat([flattened_actions, repeated_obs.to(flattened_actions.device)], dim=1)
+                                logits = classifier(classifier_inputs).squeeze(-1)  # Shape: (batch_size,)
+                                probs = F.sigmoid(logits)  # 🔁 Apply sigmoid manually
+                                all_action_logits.append(probs.detach().cpu())
+                        print('FINISHED getting action preds)')
+                        stacked_actions = torch.cat(sampled_actions, dim=0).view(diffusion_batch_size, self.num_samples, action_chunk.shape[1], action_chunk.shape[2])
+                        all_action_logits = torch.cat(all_action_logits, dim=0).view(diffusion_batch_size, self.num_samples)
+                        
+                        # Pick best sample per original observation
+                        max_logits, best_indices = all_action_logits.max(dim=1)  # Shape: (B,)
+                        batch_indices = torch.arange(diffusion_batch_size, device=stacked_actions.device)
+
+                        best_actions = stacked_actions[batch_indices, best_indices]  # Shape: (B, A1, A2)
+
+                        # Final output
+                        action_dict = {'action': best_actions}
+
                 # device_transfer
-                np_action_dict = dict_apply(action_dict,
-                    lambda x: x.detach().to('cpu').numpy())
+                np_action_dict = dict_apply(action_dict,lambda x: x.detach().to('cpu').numpy())
 
                 #np.all(np_action_dict['action_pred'][:,1:9,:]==np_action_dict['action'])
                 action = np_action_dict['action']
@@ -530,7 +590,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         # save_rollout_classification_scores_2_before = np.hstack((save_rollout_classification_scores_2_before,np.expand_dims(classifier_action_pred['global_cond']['before'].detach().cpu().numpy(),1)))
                         save_rollout_classification_scores_1_after = np.hstack((save_rollout_classification_scores_1_after,np.expand_dims(classifier_action_pred['classifier_policy_global_cond']['after'].detach().cpu().numpy(),1)))
                         # save_rollout_classification_scores_2_after = np.hstack((save_rollout_classification_scores_2_after,np.expand_dims(classifier_action_pred['global_cond']['after'].detach().cpu().numpy(),1)))
-
+                keys_to_save=['obj_to_robot0_eef_pos', 'obj_to_robot0_eef_quat', 'container_to_robot0_eef_pos', 'container_to_robot0_eef_quat', 'obj_pos','obj_quat','container_pos','container_quat']
+                # keys_to_save=['0:3', '3:7', '7:10', '10:14', '14:17','17:21','21:24','24:28']
+                
                 if self.save_stuff:
                     if 'save_rollout_obsdict_robot0_agentview_right_image' not in locals():
                         save_rollout_obsdict_robot0_agentview_right_image = np.expand_dims(np_obs_dict['robot0_agentview_right_image'],0)
@@ -538,12 +600,18 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         save_rollout_obsdict_eyeinhand_images = np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)
                         save_rollout_obsdict_robot0s = np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)
                         save_rollout_actions = np.expand_dims(extended_env_action,0)
+                        get_raw_obs=env.call('get_raw_observations')[this_local_slice]
+                        concated_current_obs=np.concatenate([np.vstack([x[key] for x in get_raw_obs]) for key in keys_to_save],axis=1)
+                        save_rollout_raw_obs = np.expand_dims(concated_current_obs,0)
                     else:
                         save_rollout_obsdict_robot0_agentview_right_image = np.vstack((save_rollout_obsdict_robot0_agentview_right_image,np.expand_dims(np_obs_dict['robot0_agentview_right_image'],0)))
                         save_rollout_obsdict_robot0_agentview_left_image = np.vstack((save_rollout_obsdict_robot0_agentview_left_image,np.expand_dims(np_obs_dict['robot0_agentview_left_image'],0)))
                         save_rollout_obsdict_eyeinhand_images = np.vstack((save_rollout_obsdict_eyeinhand_images,np.expand_dims(np_obs_dict['robot0_eye_in_hand_image'],0)))
                         save_rollout_obsdict_robot0s = np.vstack((save_rollout_obsdict_robot0s,np.expand_dims(np.concatenate((np_obs_dict['robot0_eef_pos'], np_obs_dict['robot0_eef_quat'],np_obs_dict['robot0_gripper_qpos']), axis=2),0)))
                         save_rollout_actions = np.vstack((save_rollout_actions,np.expand_dims(extended_env_action,0)))
+                        get_raw_obs=env.call('get_raw_observations')[this_local_slice]
+                        concated_current_obs=np.concatenate([np.vstack([x[key] for x in get_raw_obs]) for key in keys_to_save],axis=1)
+                        save_rollout_raw_obs = np.vstack((save_rollout_raw_obs,np.expand_dims(concated_current_obs,0)))
 
                 done = np.all(done)
                 past_action = action
@@ -551,7 +619,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 # update pbar
                 pbar.update(extended_env_action.shape[1])
                 if self.debug:
-                    done=True
+                    if env_step_index==2:
+                        done=True     
+                # if chunk_idx+1<n_chunks:
+                #     done=True
+               
             pbar.close()
 
             # collect data for this round
@@ -578,6 +650,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     demogrp.attrs['ep_meta'] = one_env['ep_meta']
                     demogrp.attrs['model_file'] = one_env['env_model']
                     demogrp.create_dataset('actions', data = save_rollout_actions[:,index].reshape(-1, *save_rollout_actions[:,index].shape[2:]))
+                    demogrp.create_dataset('raw_obs', data = save_rollout_raw_obs[:,index])
                     demogrp.create_dataset('rewards', data = np.array(env.call('get_rewards')[index]))
                     demogrp.create_dataset('grasping', data = np.array(env.call('is_grasping')[index]))
                     demogrp.create_dataset('states', data = np.expand_dims(np.array(added_state[index]),0))

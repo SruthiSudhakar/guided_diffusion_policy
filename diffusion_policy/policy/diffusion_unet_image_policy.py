@@ -134,7 +134,18 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
                     current_guidance_scale = guidance_scales_list[trajectory_step]
 
             if t==0 and classifier_policy and current_guidance_scale>0:
+                #TODO: 1. deal with the fact that only 8 actions per input, 2. do per sample grad instead of across batch grad.
                 torch.set_grad_enabled(True)
+                try:
+                    c_input = torch.cat([trajectory[:,:8,:].view(-1,56),classifier_processor.to(trajectory.device)],dim=1).requires_grad_(True)
+                except:
+                    pdb.set_trace()
+                classifier_outputs = classifier_policy(c_input)
+                class_grad = torch.autograd.grad(classifier_outputs.sum(), c_input)[0]
+                traj_grad=class_grad[:,:56].view(-1,8,7)
+                trajectory = trajectory.clone()
+                trajectory[:, :8, :] += guidance_scale* traj_grad  # Now safe, not a view of a leaf
+                """
                 action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
                 
                 prompts=[]
@@ -176,7 +187,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
                 
                 modified_actions_embedded=input_embeddings
                 #get the token ids of the modified embeddings                
-                embedding_matrix =classifier_policy.language_model.model.embed_tokens.weight
+                embedding_matrix = classifier_policy.language_model.model.embed_tokens.weight
                 similarities = torch.matmul(modified_actions_embedded, embedding_matrix.T)
                 modified_action_tokens = torch.argmax(similarities, dim=-1)  # Get most similar token ID
 
@@ -198,29 +209,27 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
                     print('diff: ', (modified_action_tokens-og_action_tokens).to(torch.float32).mean())
                     trajectory = torch.tensor(modified_actions_detokenized).to(device).to(dtype=dtype).reshape(trajectory.shape)
 
+                action_norm_stats = classifier_policy.get_action_stats('roboturk')
+                norm_mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+                action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+                actions = np.where( norm_mask, 0.5 * (modified_actions_detokenized + 1) * (action_high - action_low) + action_low, modified_actions_detokenized, )
 
+                gtactions = tokenized_inputs['input_ids'][action_mask]
+                gtactions = action_tokenizer.decode_token_ids_to_actions(gtactions.cpu().numpy())
 
+                #convert it back to the trajectory shape
+                gtactions = torch.tensor(gtactions.reshape(shape)).to(dtype=dtype)
 
-                # action_norm_stats = classifier_policy.get_action_stats('roboturk')
-                # norm_mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
-                # action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
-                # actions = np.where( norm_mask, 0.5 * (modified_actions_detokenized + 1) * (action_high - action_low) + action_low, modified_actions_detokenized, )
-
-                # gtactions = tokenized_inputs['input_ids'][action_mask]
-                # gtactions = action_tokenizer.decode_token_ids_to_actions(gtactions.cpu().numpy())
-
-                # #convert it back to the trajectory shape
-                # gtactions = torch.tensor(gtactions.reshape(shape)).to(dtype=dtype)
-
-                # #unnormalize actions
-                # action_norm_stats = classifier_policy.get_action_stats('robocasa_chunk_v1_p1')
-                # mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
-                # action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
-                # actions = np.where(mask,0.5 * (gtactions + 1) * (action_high - action_low) + action_low,gtactions,)
-
-            # if t==0 and classifier_policy and get_class_scores:
-                classifier_pred['classifier_policy_global_cond']['before']= action_logits.argmax(dim=2)#nn.Sigmoid()(cpoutput)[:,0]
-                classifier_pred['classifier_policy_global_cond']['after']= action_logits.argmax(dim=2) #nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=classifier_policy_global_cond))[:,0]
+                #unnormalize actions
+                action_norm_stats = classifier_policy.get_action_stats('robocasa_chunk_v1_p1')
+                mask = action_norm_stats.get("mask", np.ones_like(action_norm_stats["q01"], dtype=bool))
+                action_high, action_low = np.array(action_norm_stats["q99"]), np.array(action_norm_stats["q01"])
+                actions = np.where(mask,0.5 * (gtactions + 1) * (action_high - action_low) + action_low,gtactions,)
+                """
+                
+                # if t==0 and classifier_policy and get_class_scores:
+                classifier_pred['classifier_policy_global_cond']['before']= 0 #action_logits.argmax(dim=2)#nn.Sigmoid()(cpoutput)[:,0]
+                classifier_pred['classifier_policy_global_cond']['after']= 0 # action_logits.argmax(dim=2) #nn.Sigmoid()(classifier_policy.model(trajectory, timesteps, local_cond=None, global_cond=classifier_policy_global_cond))[:,0]
 
         # finally make sure conditioning is enforced
         trajectory[condition_mask] = condition_data[condition_mask].to(trajectory.dtype)        
@@ -231,7 +240,6 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
             with torch.no_grad():
                 nobs = self.normalizer.normalize(obs_dict)
                 image_obs=dict_apply(nobs, lambda x: x[:,-1,...])
-                torch.set_grad_enabled(True)
                 action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
                     
                 prompts=[]
@@ -249,11 +257,10 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
                 except:
                     print('hey something wrong')
                 cpoutput = classifier_policy(input_ids=tokenized_inputs['input_ids'], attention_mask=tokenized_inputs["attention_mask"], pixel_values=tokenized_inputs['pixel_values'], return_dict=True)
-                action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :]
-                last_valid_indices = tokenized_inputs["attention_mask"].sum(axis=1) - 1  # Get last valid token index
+                action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :].detach().cpu()
+                last_valid_indices = (tokenized_inputs["attention_mask"].sum(axis=1) - 1).detach().cpu()  # Get last valid token index
                 batch_indices = torch.arange(tokenized_inputs["attention_mask"].size(0))  # [0, 1, 2, ..., batch_size-1]
                 guided_towards=1
-                pdb.set_trace()
                 print(f'action_preds:', action_logits.argmax(dim=-1)[batch_indices,last_valid_indices])
                 return action_logits[batch_indices,last_valid_indices,classifier_processor.tokenizer.vocab[str(int(guided_towards))]]
 

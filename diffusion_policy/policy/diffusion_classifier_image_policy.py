@@ -32,6 +32,7 @@ class DiffusionClassifierImagePolicy(BaseImagePolicy):
             n_groups=8,
             cond_predict_scale=True,
             negate_failure_losses=0,
+            train_noisy_trajs=False,
             # parameters passed to step
             **kwargs):
         super().__init__()
@@ -81,6 +82,7 @@ class DiffusionClassifierImagePolicy(BaseImagePolicy):
         self.obs_as_global_cond = obs_as_global_cond #true
         self.kwargs = kwargs
         self.negate_failure_losses = negate_failure_losses
+        self.train_noisy_trajs = train_noisy_trajs
 
         if num_inference_steps is None:
             num_inference_steps = noise_scheduler.config.num_train_timesteps
@@ -122,31 +124,36 @@ class DiffusionClassifierImagePolicy(BaseImagePolicy):
             cond_data = torch.cat([nactions, nobs_features], dim=-1)
             trajectory = cond_data.detach()
 
-        # generate impainting mask
-        condition_mask = self.mask_generator(trajectory.shape)
+        if self.train_noisy_trajs:
+            # generate impainting mask
+            condition_mask = self.mask_generator(trajectory.shape)
 
-        # Sample noise that we'll add to the images
-        noise = torch.randn(trajectory.shape, device=trajectory.device)
-        bsz = trajectory.shape[0]
-        # Sample a random timestep for each image
-        timesteps = torch.randint(
-            0, self.noise_scheduler.config.num_train_timesteps, 
-            (bsz,), device=trajectory.device
-        ).long()
-        # Add noise to the clean images according to the noise magnitude at each timestep
-        # (this is the forward diffusion process)
-        noisy_trajectory = self.noise_scheduler.add_noise(
-            trajectory, noise, timesteps)
-        
-        # compute loss mask
-        loss_mask = ~condition_mask
+            # Sample noise that we'll add to the images
+            noise = torch.randn(trajectory.shape, device=trajectory.device)
+            bsz = trajectory.shape[0]
+            # Sample a random timestep for each image
+            timesteps = torch.randint(
+                0, self.noise_scheduler.config.num_train_timesteps, 
+                (bsz,), device=trajectory.device
+            ).long()
+            # Add noise to the clean images according to the noise magnitude at each timestep
+            # (this is the forward diffusion process)
+            noisy_trajectory = self.noise_scheduler.add_noise(
+                trajectory, noise, timesteps)
+            
+            # compute loss mask
+            loss_mask = ~condition_mask
 
-        # apply conditioning
-        noisy_trajectory[condition_mask] = cond_data[condition_mask]
-                
+            # apply conditioning
+            noisy_trajectory[condition_mask] = cond_data[condition_mask]
+        else:
+            bsz = trajectory.shape[0]
+            timesteps = torch.zeros((bsz,), device=trajectory.device ).long()
+
+            noisy_trajectory=trajectory
+                    
         # Predict the noise residual
-        pred = self.model(noisy_trajectory, timesteps, 
-            local_cond=local_cond, global_cond=global_cond)
+        pred = self.model(noisy_trajectory, timesteps, local_cond=local_cond, global_cond=global_cond)
         return pred
 
     def compute_loss(self, batch, return_raw_outputs=False):
@@ -181,25 +188,27 @@ class DiffusionClassifierImagePolicy(BaseImagePolicy):
         # generate impainting mask
         condition_mask = self.mask_generator(trajectory.shape)
 
-        # Sample noise that we'll add to the images
-        noise = torch.randn(trajectory.shape, device=trajectory.device)
-        bsz = trajectory.shape[0]
-        # Sample a random timestep for each image
-        timesteps = torch.randint(
-            0, self.noise_scheduler.config.num_train_timesteps, 
-            (bsz,), device=trajectory.device
-        ).long()
-        # Add noise to the clean images according to the noise magnitude at each timestep
-        # (this is the forward diffusion process)
-        noisy_trajectory = self.noise_scheduler.add_noise(
-            trajectory, noise, timesteps)
-        
-        # compute loss mask
-        loss_mask = ~condition_mask
+        if self.train_noisy_trajs:
+            # Sample noise that we'll add to the images
+            noise = torch.randn(trajectory.shape, device=trajectory.device)
+            bsz = trajectory.shape[0]
+            # Sample a random timestep for each image
+            timesteps = torch.randint(
+                0, self.noise_scheduler.config.num_train_timesteps, 
+                (bsz,), device=trajectory.device
+            ).long()
+            # Add noise to the clean images according to the noise magnitude at each timestep
+            # (this is the forward diffusion process)
+            noisy_trajectory = self.noise_scheduler.add_noise(
+                trajectory, noise, timesteps)
+            
+            # compute loss mask
+            loss_mask = ~condition_mask
 
-        # apply conditioning
-        noisy_trajectory[condition_mask] = cond_data[condition_mask]
-                
+            # apply conditioning
+            noisy_trajectory[condition_mask] = cond_data[condition_mask]
+        else:
+            noisy_trajectory=trajectory
         # Predict the noise residual
         pred = self.model(noisy_trajectory, timesteps, 
             local_cond=local_cond, global_cond=global_cond)
