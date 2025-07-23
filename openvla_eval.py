@@ -101,21 +101,6 @@ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_poli
     --prefix_dir jul23_0additionalsteps \
     --additional_steps 0
 
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:4 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 2 \
-    --specific_train_exs 2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --choose_sample \
-    --num_samples 4 \
-    --prefix_dir jul22_additionalsteps \
-    --add mr140_2_ns4_onlyhallucinate8stepsintothefuture \
-    --additional_steps 1
 
 python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:4 \
@@ -129,9 +114,9 @@ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_poli
     --max_steps 200 \
     --choose_sample \
     --num_samples 4 \
-    --prefix_dir jul22_additionalsteps \
-    --add mr140_2_ns4_onlyhallucinate8stepsintothefuture \
-    --additional_steps 1
+    --prefix_dir jul23_4additionalsteps \
+    --additional_steps 4
+
 """
 #   
 # /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \

@@ -39,6 +39,9 @@ import time
 from typing_extensions import TypedDict, NotRequired, Annotated
 import PIL
 import logging; logging.disable(logging.CRITICAL)
+from transformers import AutoProcessor
+from vllm import LLM, SamplingParams
+from qwen_vl_utils import process_vision_info
 
 import logging
 from contextlib import contextmanager
@@ -47,6 +50,8 @@ import cv2
 import numpy as np
 
 import cv2, numpy as np, os, shutil, subprocess, tempfile
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing as mp
 
 def images_to_video(images, output_path='output.mp4', fps=10):
     # Assume all images are (3, H, W)
@@ -96,7 +101,103 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
 
 from transformers import CLIPTokenizer, CLIPModel
 import torch
+SYSTEM_PROMPT_CRITIC = """You are a helpful video analyzer."""
+USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plate near the sink.\n\nWatch what happens AFTER the robot picks up the object:\n- TOWARDS: Robot successfully moves the object towards the plate (task succeeds)\n- AWAY: Robot fails and moves the object away from the plate (task fails)\n\nImportant: Judge based on whether the robot completes the task successfully or not.\n\nYour response MUST be:\nDirection: [TOWARDS/AWAY]\nConfidence: [High/Medium/Low]\nReasoning: [Brief explanation]"
+MODEL_PATH = "/proj/vondrick3/sruthi/robots/sruthi_cosmos_reason1/models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
+print('THE MODEL PATH IS', MODEL_PATH)
+TEMPRATURE = 0.3
+LLM_GPU_ID=7
+# Initialize LLM once
+print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+pdb.set_trace()
+llm = LLM(
+    model=MODEL_PATH,
+    limit_mm_per_prompt={"image": 1, "video": 1},
+    enforce_eager=True,
+    device=f'cuda:{LLM_GPU_ID}',
+    max_num_seqs=100,  # Allow batch processing
+)
 
+sampling_params = SamplingParams(
+    n=1,
+    temperature=TEMPRATURE,
+    top_k=50,
+    top_p=0.95,
+    repetition_penalty=1.05,
+    max_tokens=4096,
+)
+
+# Initialize processor once
+processor = AutoProcessor.from_pretrained(MODEL_PATH)
+
+def preprocess_video(video_info, processor):
+    """Preprocess a single video for batch processing"""
+    
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
+        {"role": "user", "content": [
+                {"type": "text", "text": USER_PROMPT_CRITIC},
+                {
+                    "type": "video",
+                    "video": video_info,
+                    "fps": 1,
+                },
+            ]
+        },
+    ]
+    
+    prompt = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
+    
+    mm_data = {}
+    if image_inputs is not None:
+        mm_data["image"] = image_inputs
+    if video_inputs is not None:
+        mm_data["video"] = video_inputs
+    
+    llm_inputs = {
+        "prompt": prompt,
+        "multi_modal_data": mm_data,
+        "mm_processor_kwargs": video_kwargs,
+    }
+    
+    return {
+        'llm_inputs': llm_inputs,
+        'video_path': video_info,
+    }
+def process_batch(llm, video_batch, processor, sampling_params):
+    """Process a batch of videos using the LLM"""
+    # Preprocess all videos in parallel
+    with ThreadPoolExecutor(max_workers=mp.cpu_count()) as executor:
+        preprocessed = list(executor.map(
+            lambda v: preprocess_video(v, processor),
+            video_batch
+        ))
+    
+    # Extract LLM inputs
+    llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
+    
+    # Batch inference
+    outputs = llm.generate(llm_inputs_list, sampling_params)
+    
+    # Collect results
+    results = {}
+    for i, output in enumerate(outputs):
+        generated_text = [o.text for o in output.outputs]
+        video_path = preprocessed[i]['video_path']
+        
+        results[video_path] = generated_text
+    
+    return results
+
+video_paths_list=['data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_10_9p6a2h08.mp4',
+                  'data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_14_3h10g3fd.mp4']
+batch_results = process_batch(llm, video_paths_list, processor, sampling_params)
+print(batch_results)
 # Load the CLIP model and tokenizer
 clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
@@ -124,18 +225,9 @@ def get_gemini_response(env_idx, view, history_prompt, prompt_list):
                 print("Max retries reached. Operation failed.")
                 raise e
     return env_idx, view, response, prompt_list
-def get_gemini_value_video(all_video_paths, object_ids, step_idx):
-    history_prompt=f"You are an expert roboticist tasked with evaluating the progress \
-    of a robot performing a task. The task is INSERT_TASK_DESC. We are evaluating N_SAMPLES \
-    potential actions that the robot could take from its current state. Each action results in \
-    a different outcome, and we have rendered images of these possible outcomes. For each action, \
-    output a task completion percentage (from 0 to 100, where 100 means the task is fully completed). \
-    The higher the percentage, the more progress the action has made toward placing the object into the sink."
-    prompt1="Now here are the N_SAMPLES images of the outcomes from the proposed actions:"
+def get_vlm_rank(all_video_paths, object_ids, step_idx):
+    
 
-    prompt2="Return a JSON object that matches the given schema and contains:\n \
-        • a list of <action, scene_description, completion_percentage>\n \
-        • a best_action object.\n Do **not** wrap the JSON in markdown."
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Use tqdm to show the progress bar
         futures = []
@@ -759,6 +851,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
                             obs = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :8] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
                             sd_sample_obs.append(obs)
+
                             for extra_step in range(self.additional_steps):
                                 step2_obs_dict={'language_goal': obs_dict['language_goal'].cpu().numpy()}
                                 for key in reshaped_obs_dict.keys():
@@ -784,25 +877,13 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                         list_of_images+=[img[view] for img in v[sample_idx][env_idx]]
                                     images_to_video(list_of_images,output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')
                                     videos[env_idx][view].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')                        
-                        # print('querying gemini')
-                        # # if not self.prompt_with_video:
-                        # os.makedirs(f'{self.output_dir}/demos/', exist_ok=True)
-                        # for env_idx in range(len(all_samples_obs)):
-                        #     for sample_idx in range(len(all_samples_obs)): 
-                        #         Image.fromarray((all_samples_obs[sample_idx][env_idx]['robot0_agentview_right_image'].transpose(1,2,0)*255).astype(np.uint8)).save(f'{self.output_dir}/demos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.jpg')
-                        # best_samples_idx = get_gemini_value(current_obs,all_samples_obs, [x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
-                        # else:
-                        #     best_samples_idx = get_gemini_value_video(videos,[x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
-
-                        # print('best actions idx:', [v['best_idx'] for k,v in best_samples_idx.items()])
-                        
-                        # chunk_step_actions[chunk_idx][env_step_index]=[v['best_idx'] for k,v in best_samples_idx.items()]
-                        # json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
-                        
-                        # actions=actions[np.arange(actions.shape[0]), [v['best_idx'] for k,v in best_samples_idx.items()], :8, :]
-                        # action_dict={'action':torch.tensor(actions).to(device)}
-
-
+                        print('querying COSMOS-REASON1')
+                        best_samples_idx = get_vlm_rank(videos,[x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
+                        print('best actions idx:', [v['best_idx'] for k,v in best_samples_idx.items()])
+                        chunk_step_actions[chunk_idx][env_step_index]=[v['best_idx'] for k,v in best_samples_idx.items()]
+                        json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
+                        actions=actions[np.arange(actions.shape[0]), [v['best_idx'] for k,v in best_samples_idx.items()], :8, :]
+                        action_dict={'action':torch.tensor(actions).to(device)}
 
                         actions=actions[:, 0, :8, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
