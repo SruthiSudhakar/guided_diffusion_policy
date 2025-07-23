@@ -4,6 +4,8 @@ import numpy as np
 from collections import defaultdict, deque
 import dill
 import pdb
+from termcolor import colored
+import time
 
 def stack_repeated(x, n):
     return np.repeat(np.expand_dims(x,axis=0),n,axis=0)
@@ -100,6 +102,35 @@ class MultiStepWrapper(gym.Wrapper):
         self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
 
         obs = self._get_obs(self.n_obs_steps)
+        return obs
+
+    def hallucinate_step(self, action):
+        """
+        actions: (n_action_steps,) + action_shape
+        """
+        temp_observations = []
+        i=0
+        for act in action:
+            if len(self.done) > 0 and self.done[-1]:
+                # termination
+                break
+            start=time.time()
+            observation, reward, done, info = self.env.env.hallucinate_step(act)
+            end=time.time()
+            print(colored(f'{i} step time: {end-start}','red'))
+            i+=1
+            temp_observations.append(observation)
+        # start=time.time()
+        # obs = self.env.env.env.reset_to({'states': current_state})
+        # end=time.time()
+        # print(colored(f'reset time: {end-start}','red'))
+        return temp_observations
+
+    def reset_after_hallucination(self, reset_to_state):
+        start=time.time()
+        obs = self.env.env.env.reset_to({'states': reset_to_state})
+        end=time.time()
+        print(colored(f'reset time: {end-start}','red'))
         return obs
 
     def step(self, action):

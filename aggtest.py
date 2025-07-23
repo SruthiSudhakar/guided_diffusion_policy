@@ -12,6 +12,8 @@ for k, v in ogdict.items():
         elif len(aggs[indx])<int(sys.argv[2]):
             aggs[indx].append(float(v))
 for k, v in aggs.items():
+    if 1<=sum(v)<=9:
+        print(k)
     aggs[k]=max(v)
 print(f'TRAIN max over {len(v)} samples', sum(aggs.values())/len(aggs.values()))
 

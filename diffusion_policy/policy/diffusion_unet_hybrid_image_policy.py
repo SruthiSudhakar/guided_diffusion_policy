@@ -195,7 +195,7 @@ class DiffusionUnetHybridImagePolicy(BaseImagePolicy):
             ):
         model = self.model
         scheduler = self.noise_scheduler
-
+        print('WHAT IS THE GENERATOR')
         trajectory = torch.randn(
             size=condition_data.shape, 
             dtype=condition_data.dtype,

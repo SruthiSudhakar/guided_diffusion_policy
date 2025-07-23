@@ -8,58 +8,132 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 cv17
- python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:0 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter \
-                --n_envs 50 \
-                --n_train 5 \
-                --n_test 45 \
-                --start_rollout_from_state 140 \
-                --prefix_dir apr15_classifier \
-                --max_steps 200 \
-                --add mr140_demos5_cs10 \
-                --choose_sample \
-                --num_samples 10 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_2025-04-14_15-46-23/best_path.pth 
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:2 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 11 \
+    --specific_train_exs 169,175,182,183,206,207,214,240,241,247 \
+    --n_test 1 \
+    --max_steps 200 \
+    --start_rollout_from_state 140 \
+    --prefix_dir may8_gemini \
+    --choose_sample \
+    --num_samples 10 \
+    --end_sampling 28 \
+    --add mr140_se169_247
 
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val \
+    --n_envs 4 \
+    --specific_train_exs 10,126,131 \
+    --n_test 1 \
+    --start_rollout_from_state 0 \
+    --prefix_dir may8_gemini \
+    --choose_sample \
+    --num_samples 4 \
+    --end_sampling 46 \
+    --add mr0_se10_126_131
 
- python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:0 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_secondhalf \
-                --n_envs 64 \
-                --n_train 253 \
-                --n_test 1 \
-                --start_rollout_from_state 140 \
-                --prefix_dir apr15_classifier \
-                --max_steps 200 \
-                --choose_sample \
-                --num_samples 1 \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_2025-04-14_15-46-23/best_path.pth \
-                --add mr140_d253_cs1
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 14 \
+    --specific_train_exs 10,126,131,169,175,182,183,206,207,214,240,241,247 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --prefix_dir jul22test \
+    --choose_sample \
+    --num_samples 4 \
+    --end_sampling 32 \
+    --add test
 
- python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-                --device cuda:0 \
-                --robocasa \
-                --change_test_textures \
-                --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_secondhalf \
-                --n_envs 127 \
-                --n_train 253 \
-                --n_test 1 \
-                --start_rollout_from_state 140 \
-                --prefix_dir apr14_classifier \
-                --max_steps 200 \
-                --add test_guidance \
-                --classifier_dir /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/for_classifier_training/classifier_5/best_path.pth \
-                --guidance_scale 0.001 \
-                --guided_towards 1
-                
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 12 \
+    --specific_train_exs 2,9,42,90,102,110,140,143,146,181,214 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 4 \
+    --prefix_dir jul22_sample \
+    --add mr140_ns4
 
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 30 \
+    --specific_train_exs 9,9,9,9,9,9,9,9,9,9,2,2,2,2,2,2,2,2,2,2,42,42,42,42,42,42,42,42,42 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --add mr140_9_2_42
+
+    --choose_sample \
+    --num_samples 4 \
+    --prefix_dir jul22_sample \
+    --add mr140_ns4
+
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 2 \
+    --specific_train_exs 2 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 10 \
+    --prefix_dir jul23_0additionalsteps \
+    --additional_steps 0
+
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 2 \
+    --specific_train_exs 2 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 4 \
+    --prefix_dir jul22_additionalsteps \
+    --add mr140_2_ns4_onlyhallucinate8stepsintothefuture \
+    --additional_steps 1
+
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 2 \
+    --specific_train_exs 2 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 4 \
+    --prefix_dir jul22_additionalsteps \
+    --add mr140_2_ns4_onlyhallucinate8stepsintothefuture \
+    --additional_steps 1
 """
-# 
+#   
 # /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
 import sys
 # use line-buffering for both stdout and stderr
@@ -86,20 +160,20 @@ import time
 import numpy as np
 import tensorflow as tf
 from PIL import Image
-from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
-from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
-from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
-from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
-from experiments.robot.openvla_utils import get_processor
-from experiments.robot.robot_utils import ( get_action, get_image_resize_size, get_model,)
-from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
+# from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
+# from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
+# from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
+# from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
+# from experiments.robot.openvla_utils import get_processor
+# from experiments.robot.robot_utils import ( get_action, get_image_resize_size, get_model,)
+# from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from types import SimpleNamespace
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
+# from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
 class SimpleClassifier(nn.Module):
@@ -146,9 +220,15 @@ class SimpleClassifier(nn.Module):
 @click.option('-show_classifier_scores', '--show_classifier_scores', is_flag=True)
 @click.option('-adaptive_guidance', '--adaptive_guidance', default='None')
 @click.option('-decode_first', '--decode_first', is_flag=False)
+@click.option('-start_sampling', '--start_sampling', default=0)
+@click.option('-end_sampling', '--end_sampling', default=27)
+@click.option('-additional_steps', '--additional_steps', default=0)
+@click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
+@click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video):
     # Extract the value for task.dataset_path
+    specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
     with open(yaml_file, 'r') as file:
         train_overrides = yaml.safe_load(file)
@@ -181,9 +261,10 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             data = h5py.File(dataset_path, 'r')
             for i in data['data']:
                 max_steps.append(data['data'][i]['actions'].shape[0]+50)
-            print('max_steps',max(max_steps))
+            max_steps=np.array(max_steps)
+            print('max_steps',int(np.percentile(max_steps,90)))
             data.close()    
-            max_steps=max(max_steps)
+            max_steps=int(np.percentile(max_steps,90))
         current_time = datetime.datetime.now()
 
         if not choose_sample and classifier_dir:
@@ -192,7 +273,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             else:
                 output_dir+=f'{prefix_dir}/{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}'
         elif choose_sample:
-            output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}_choose_sample_{choose_sample}_num_samples_{num_samples}'
+            output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}_choose_sample_{choose_sample}_num_samples_{num_samples}_ws_{start_sampling}-{end_sampling}'
         else:
             output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}'
         if os.path.exists(output_dir):
@@ -208,7 +289,8 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 'test_start_seed', test_start_seed, 'change_test_objects', change_test_objects, \
                 'change_test_textures', change_test_textures, 'change_test_object_instances', \
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
-                'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state]
+                'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
+                'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs',specific_train_exs, 'prompt_with_video',prompt_with_video]
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -241,6 +323,11 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['show_classifier_scores']=show_classifier_scores
             cfg['task']['env_runner']['adaptive_guidance']=adaptive_guidance
             cfg['task']['env_runner']['decode_first']=decode_first
+            cfg['task']['env_runner']['start_sampling']=start_sampling
+            cfg['task']['env_runner']['end_sampling']=end_sampling
+            cfg['task']['env_runner']['additional_steps']=additional_steps
+            cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
+            cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
 
         cfg['task']['dataset_path'] = dataset_path
         cfg['task']['env_runner']['dataset_path'] = dataset_path

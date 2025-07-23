@@ -1,5 +1,6 @@
 import gym
 import numpy as np
+import pdb
 
 class VideoWrapper(gym.Wrapper):
     def __init__(self, 

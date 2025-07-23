@@ -3,6 +3,7 @@ import numpy as np
 import gym
 from gym.spaces import Box
 from robomimic.envs.env_robosuite import EnvRobosuite
+import pdb
 
 class RobomimicLowdimWrapper(gym.Env):
     def __init__(self, 

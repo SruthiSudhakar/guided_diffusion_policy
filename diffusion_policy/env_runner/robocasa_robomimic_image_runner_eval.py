@@ -28,10 +28,53 @@ import pdb, json
 from termcolor import colored
 from robocasa.models.objects.kitchen_objects import OBJ_CATEGORIES, OBJ_GROUPS
 import cv2
-import time
 import json
 import torch.nn.functional as F
+from PIL import Image
+from google import genai
+import google
+import ast
+import concurrent.futures
+import time
+from typing_extensions import TypedDict, NotRequired, Annotated
+import PIL
+import logging; logging.disable(logging.CRITICAL)
 
+import logging
+from contextlib import contextmanager
+
+import cv2
+import numpy as np
+
+import cv2, numpy as np, os, shutil, subprocess, tempfile
+
+def images_to_video(images, output_path='output.mp4', fps=10):
+    # Assume all images are (3, H, W)
+    height, width = images[0].shape[1], images[0].shape[2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+
+    for img in images:
+        frame = np.transpose(img, (1, 2, 0))  # CHW -> HWC
+        if frame.shape[-1] == 4:
+            frame = frame[..., :3]
+        frame = (frame * 255).astype(np.uint8) if frame.dtype == np.float32 else frame
+        video.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+
+    video.release()
+
+
+class Action(TypedDict):
+    action: int
+    scene_description: str
+    completion_percentage: int
+
+class Output(TypedDict):
+    actions: list[Action]
+    best_action: Action
+    error: NotRequired[str]        # optional field for graceful failures
+client = genai.Client(api_key="AIzaSyD6MKO5Hn1ryZ4mqqnLCGNvsERNXcS5pI8")
+# model = genai.GenerativeModel("models/gemini-2.0-flash")
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
@@ -58,6 +101,172 @@ import torch
 clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
 clip_model = CLIPModel.from_pretrained(clip_model_name)
+def get_gemini_response(env_idx, view, history_prompt, prompt_list):
+    # Start chat and send message
+    retries = 5
+    for attempt in range(retries):
+        try:
+            response = client.models.generate_content(
+                model='gemini-2.0-flash',
+                contents=prompt_list,
+                config={
+                    'response_mime_type': 'application/json',
+                    'response_schema': Output,
+                },
+            )
+            break  # If the request is successful, exit the loop
+        except Exception as e:
+            if attempt < retries - 1:
+                wait_time = 2 ** attempt      # Exponential backoff
+                print(f"Retrying in {wait_time} seconds...")
+                time.sleep(wait_time)
+            else:
+                print("Max retries reached. Operation failed.")
+                raise e
+    return env_idx, view, response, prompt_list
+def get_gemini_value_video(all_video_paths, object_ids, step_idx):
+    history_prompt=f"You are an expert roboticist tasked with evaluating the progress \
+    of a robot performing a task. The task is INSERT_TASK_DESC. We are evaluating N_SAMPLES \
+    potential actions that the robot could take from its current state. Each action results in \
+    a different outcome, and we have rendered images of these possible outcomes. For each action, \
+    output a task completion percentage (from 0 to 100, where 100 means the task is fully completed). \
+    The higher the percentage, the more progress the action has made toward placing the object into the sink."
+    prompt1="Now here are the N_SAMPLES images of the outcomes from the proposed actions:"
+
+    prompt2="Return a JSON object that matches the given schema and contains:\n \
+        • a list of <action, scene_description, completion_percentage>\n \
+        • a best_action object.\n Do **not** wrap the JSON in markdown."
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Use tqdm to show the progress bar
+        futures = []
+        # Submit the tasks for execution
+        for env_idx, object_name in enumerate(object_ids):
+            n_samples=str(len(all_video_paths))
+            task_description = f'Pick the {object_name} from the sink and place it on the plate that is next to the sink.'
+            history_prompt=history_prompt.replace('INSERT_TASK_DESC', task_description)
+            history_prompt=history_prompt.replace('N_SAMPLES', n_samples)
+            prompt1=prompt1.replace('N_SAMPLES', n_samples)
+            for view,samples in all_video_paths[env_idx].items():
+                prompt_list=[history_prompt,prompt1]
+                for sample_idx in range(len(samples)):
+                    prompt_list.append(f'Action {sample_idx+1} - Video: ')
+                    prompt_list.append(samples[sample_idx])
+                    myfile = client.files.upload(file=samples[sample_idx])
+                prompt_list.append(prompt2)
+                futures.append(executor.submit(get_gemini_response, env_idx, view, history_prompt, prompt_list))
+        # Wait for all futures to complete before moving on
+        concurrent.futures.wait(futures)
+        outputs = {}
+        # Collect results as they complete
+        for idx in range(len(futures)):
+            env_idx, view, response, prompt_list = futures[idx].result()
+            # for img_idx,img in enumerate(prompt_list): 
+            #     if type(img)==PIL.Image.Image:
+            #         img.save(f'test166_{idx}_{img_idx}.jpg') 
+        for future in concurrent.futures.as_completed(futures):
+            env_idx, view, response, prompt_list = future.result()
+            """
+            idx=3
+            env_idx, view, response, prompt_list = futures[idx].result()
+            for idx,img in enumerate(prompt_list): img.save(f'temp_{idx}.jpg') if type(img)==PIL.Image.Image else print('hi') 
+            """
+            if env_idx not in outputs:
+                outputs[env_idx]={}
+            try:
+                outputs[env_idx][view]={
+                    'response':json.loads(response.text),
+                }
+            except:
+                print('outputs not formatted correctly')
+                pdb.set_trace()
+        for env_idx,_ in outputs.items():
+            try:
+                pdb.set_trace()
+                arc0=[x['completion_percentage'] for x in outputs[env_idx]['robot0_eye_in_hand_image']['response']['actions']]
+                arc1=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_left_image']['response']['actions']]
+                arc2=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_right_image']['response']['actions']]
+                avg_results=[(a + b + c) / 3 for a, b, c in zip(arc0, arc1, arc2)]
+                outputs[env_idx]['avg_list']= avg_results
+                outputs[env_idx]['best_idx']= avg_results.index(max(avg_results))
+                assert outputs[env_idx]['best_idx'] < 10
+            except:
+                print('some issue. could not get avg list and best idx. or best_idx>=10')
+                pdb.set_trace()
+    return outputs
+
+def get_gemini_value(current_obs, all_samples_obs, object_ids, step_idx):
+    history_prompt=f"You are an expert roboticist tasked with evaluating the progress \
+    of a robot performing a task. The task is INSERT_TASK_DESC. We are evaluating N_SAMPLES \
+    potential actions that the robot could take from its current state. Each action results in \
+    a different outcome, and we have rendered images of these possible outcomes. For each action, \
+    output a task completion percentage (from 0 to 100, where 100 means the task is fully completed). \
+    The higher the percentage, the more progress the action has made toward placing the object into the sink. \
+    Here is the initial robot scene:"
+
+    prompt1="Now here are the N_SAMPLES images of the outcomes from the proposed actions:"
+
+    prompt2="Return a JSON object that matches the given schema and contains:\n \
+        • a list of <action, scene_description, completion_percentage>\n \
+        • a best_action object.\n Do **not** wrap the JSON in markdown."
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Use tqdm to show the progress bar
+        futures = []
+        # Submit the tasks for execution
+        for env_idx, object_name in enumerate(object_ids):
+            n_samples=str(len(all_samples_obs))
+            task_description = f'Pick the {object_name} from the sink and place it on the plate that is next to the sink.'
+            history_prompt=history_prompt.replace('INSERT_TASK_DESC', task_description)
+            history_prompt=history_prompt.replace('N_SAMPLES', n_samples)
+            prompt1=prompt1.replace('N_SAMPLES', n_samples)
+            for view in ['robot0_agentview_right_image','robot0_agentview_left_image','robot0_eye_in_hand_image']:
+                image1 = Image.fromarray(np.flipud(current_obs[env_idx][view]))
+                prompt_list=[history_prompt,image1,prompt1]
+                for sample_idx in range(len(all_samples_obs)):
+                    prompt_list.append(f'Action {sample_idx+1} - Image: ')
+                    prompt_list.append(Image.fromarray((all_samples_obs[sample_idx][env_idx][view]*255).transpose(1,2,0).astype('uint8')))
+                prompt_list.append(prompt2)
+                futures.append(executor.submit(get_gemini_response, env_idx, view, history_prompt, prompt_list))
+        # Wait for all futures to complete before moving on
+        concurrent.futures.wait(futures)
+        outputs = {}
+        # Collect results as they complete
+        for idx in range(len(futures)):
+            env_idx, view, response, prompt_list = futures[idx].result()
+            # for img_idx,img in enumerate(prompt_list): 
+            #     if type(img)==PIL.Image.Image:
+            #         img.save(f'test166_{idx}_{img_idx}.jpg') 
+        for future in concurrent.futures.as_completed(futures):
+            env_idx, view, response, prompt_list = future.result()
+            """
+            idx=3
+            env_idx, view, response, prompt_list = futures[idx].result()
+            for idx,img in enumerate(prompt_list): img.save(f'temp_{idx}.jpg') if type(img)==PIL.Image.Image else print('hi') 
+            """
+            if env_idx not in outputs:
+                outputs[env_idx]={}
+            try:
+                outputs[env_idx][view]={
+                    'response':json.loads(response.text),
+                }
+            except:
+                print('outputs not formatted correctly')
+                pdb.set_trace()
+        for env_idx,_ in outputs.items():
+            try:
+                arc0=[x['completion_percentage'] for x in outputs[env_idx]['robot0_eye_in_hand_image']['response']['actions']]
+                arc1=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_left_image']['response']['actions']]
+                arc2=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_right_image']['response']['actions']]
+                avg_results=[(a + b + c) / 3 for a, b, c in zip(arc0, arc1, arc2)]
+                outputs[env_idx]['avg_list']= avg_results
+                outputs[env_idx]['best_idx']= avg_results.index(max(avg_results))
+                print(outputs[env_idx]['avg_list'],outputs[env_idx]['best_idx'])
+                if sum(outputs[env_idx]['avg_list'])>10:
+                    pdb.set_trace()
+                    print('hey')
+            except:
+                print('could not get avg list and best idx')
+                pdb.set_trace()
+    return outputs
 
 class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
@@ -98,6 +307,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             adaptive_guidance='None',
             decode_first=True,
             take_first_n_train_samples=False,
+            start_sampling=0,
+            end_sampling=27,
+            specific_train_exs=[],
+            prompt_with_video=True,
+            additional_steps=0,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -206,17 +420,14 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         train_embeddings_list =[]
         batch_size = 128  # You can adjust this based on your memory capacity
         # first compute clip embeddings quickly
-        with h5py.File(dataset_path, 'r') as f:
-            for i in tqdm.tqdm(range(0, n_train, batch_size)):  # Process in batches
+        if len(specific_train_exs)>0:
+            with h5py.File(dataset_path, 'r') as f:
                 texts_batch = []
                 batch_indices = []
-                for j in range(batch_size):
-                    idx = (i + j) % len(f['data'])
-                    train_idx = train_start_idx + idx
-                    ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta", None)
+                for ex in specific_train_exs:
+                    ep_meta = f[f'data/demo_{ex}'].attrs.get("ep_meta", None)
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
-                    batch_indices.append(train_idx)            
                 inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
                 inputs = {key: value.to(device) for key, value in inputs.items()}
                 with torch.no_grad():
@@ -225,10 +436,39 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         
                 # Append the embeddings to the list
                 train_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
+        else:
+            with h5py.File(dataset_path, 'r') as f:
+                for i in tqdm.tqdm(range(0, n_train, batch_size)):  # Process in batches
+                    texts_batch = []
+                    batch_indices = []
+                    for j in range(batch_size):
+                        idx = (i + j) % len(f['data'])
+                        train_idx = train_start_idx + idx
+                        ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta", None)
+                        text = json.loads(ep_meta)['lang']
+                        texts_batch.append(text)
+                        batch_indices.append(train_idx)            
+                    inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                    inputs = {key: value.to(device) for key, value in inputs.items()}
+                    with torch.no_grad():
+                        batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                        batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
+            
+                    # Append the embeddings to the list
+                    train_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
+        
         with h5py.File(dataset_path, 'r') as f:
             embedding_idx=0
-            for i in tqdm.tqdm(range(n_train)):
-                train_idx = train_start_idx + (i % len(f['data']))
+            if len(specific_train_exs)>0:
+                list_of_demos = range(len(specific_train_exs))
+            else:
+                list_of_demos = range(n_train)
+
+            for i in tqdm.tqdm(list_of_demos):
+                if len(specific_train_exs)>0:
+                    train_idx = int(specific_train_exs[i])
+                else:
+                    train_idx = train_start_idx + (i % len(f['data']))
                 enable_render = True
                 init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
@@ -367,19 +607,18 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 env_seeds.append(str(test_idx) + "_" + str(train_start_idx + i))
                 env_prefixs.append('test/')
                 env_init_fn_dills.append(dill.dumps(init_fn))
+        
+        
+        
         self.debug=debug
         if self.debug:
-            # env = SyncVectorEnv(env_fns)
-            pdb.set_trace()
-            """
-            from scipy.spatial.transform import Rotation as R
+            env = SyncVectorEnv(env_fns)
+            """ from scipy.spatial.transform import Rotation as R
             temp=env.envs[0].env.env.env.env._observables
             rot = R.from_quat(temp['robot0_base_quat'])
             R_base_to_world = rot.as_matrix()
             eef_offset_world = R_base_to_world @ temp['robot0_base_to_eef_pos']
-            assert np.allclose(temp['robot0_eef_pos'] , temp['robot0_base_pos']+eef_offset_world, atol=1e-6)
-
-            """
+            assert np.allclose(temp['robot0_eef_pos'] , temp['robot0_base_pos']+eef_offset_world, atol=1e-6) """
         else:
             env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
 
@@ -388,8 +627,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             self.datagrp =  self.data_file.create_group('data')
             self.datagrp.attrs['ogdataset'] = self.output_dir
             self.datagrp.attrs['env_args'] = json.dumps(env_meta)
-
-
         self.env_meta = env_meta
         self.env = env
         self.env_fns = env_fns
@@ -413,6 +650,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.choose_sample=choose_sample
         self.num_samples=num_samples
         self.start_rollout_from_state=start_rollout_from_state
+        self.start_sampling=start_sampling
+        self.end_sampling=end_sampling
+        self.specific_train_exs=specific_train_exs
+        self.prompt_with_video=prompt_with_video
+        self.additional_steps=additional_steps
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -436,6 +678,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         # all_classification_scores2_after = [None] * n_inits
 
         demo_number = -1
+        chunk_step_actions={}
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
             end = min(n_inits, start + n_envs)
@@ -467,6 +710,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             language_goal = [json.loads(x['ep_meta'])['lang'] for x in language_goal]
             done = False
             env_step_index = 0
+            chunk_step_actions[chunk_idx]={}
             while not done:
                 env_step_index+=1
                 # create obs dict
@@ -485,74 +729,93 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         del obs_dict['robot0_eef_pos']
                         del obs_dict['robot0_eef_quat']
                         del obs_dict['robot0_gripper_qpos']
-                    if not self.choose_sample:
-                        obs_for_classifier=['robot0_eef_pos', 'obj_pos', 'container_pos']
-                        get_raw_obs=env.call('get_raw_observations')
-                        concat_obs_list = [torch.tensor(np.vstack([x[key] for x in get_raw_obs]), dtype=torch.float32) for key in obs_for_classifier]
-                        classifier_processor = torch.cat(concat_obs_list, dim=1)  # Shape: (B, D)
+                    if self.choose_sample and self.start_sampling<env_step_index<self.end_sampling:
+                        sample_number=50
+                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(sample_number, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
+                        action_dict = policy.predict_action(reshaped_obs_dict)[0] #action outputs are batch_sizex8x7
+                        oversampled_actions = action_dict['action_pred'].view(-1, sample_number, 16, 7).detach().to('cpu').numpy()
 
-                        if self.adaptive_guidance!='None':
-                            action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier_processor, classifier, grad_steps, guidance_scale, guided_towards, trajectory_step=env_step_index, adaptive_guidance=self.adaptive_guidance, max_steps=self.max_steps/self.n_action_steps, get_class_scores=self.show_classifier_scores, decode_first=self.decode_first, language_goal=language_goal)
-                        elif classifier:
-                            action_dict, classifier_action_pred = policy.predict_action(obs_dict, classifier_processor, classifier, grad_steps, guidance_scale, guided_towards, get_class_scores=self.show_classifier_scores, decode_first=self.decode_first, language_goal=language_goal)
-                        else:
-                            action_dict, classifier_action_pred = policy.predict_action(obs_dict)
-                    elif self.choose_sample:
-                        # resample
-                        print('chose_sample from ',self.num_samples)
-                        diffusion_batch_size=obs_dict['language_goal'].shape[0]
-                        classifier_batch_size=8192
-                        # reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(self.num_samples, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128
-                        # action = policy.predict_action(reshaped_obs_dict)[0]['action'] #action outputs are batch_sizex8x7
-                        obs_for_classifier=['robot0_eef_pos', 'obj_pos', 'container_pos']
-                        get_raw_obs=env.call('get_raw_observations')
-                        concat_obs_list = [torch.tensor(np.vstack([x[key] for x in get_raw_obs]), dtype=torch.float32) for key in obs_for_classifier]
-                        concated_current_obs = torch.cat(concat_obs_list, dim=1)  # Shape: (B, D)
-                        assert concated_current_obs.shape[0]==obs_dict['language_goal'].shape[0]
+                        #choosing based on variance
+                        mean = np.mean(oversampled_actions, axis=(1),keepdims=True)  # Shape: (batch_size, 100)
+                        stds = np.abs(oversampled_actions-mean)
+                        interval = (stds.shape[1] // self.num_samples) - 1
+                        top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
+                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
+                        batch_indices = np.arange(oversampled_actions.shape[0])[:, None]
+                        actions = oversampled_actions[batch_indices, top_n_indices]
+                        print('var before:', np.sum(np.var(oversampled_actions,axis=1)),'var after:', np.sum(np.var(actions,axis=1)))
+                        add_on = np.tile([0., -0.,  0.,  0., -1.], (actions.shape[0], actions.shape[1], actions.shape[2], 1))
+                        extended_env_action = np.concatenate((actions, add_on), axis=-1)
+                        current_state = env.call('get_env_state')
+                        sd_sample_obs = []
+                        step2_sd_sample_obs = {}
+                        for extra_step in range(self.additional_steps):  step2_sd_sample_obs[extra_step]=[]
+                        all_samples_obs = []
+                        reset_obs=[]
+                        current_obs=env.call('get_raw_observations')
+                        pbar=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
+                        aggregated_obs = []
+                        for sample_idx in pbar:
+                            pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
+                            obs = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :8] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            sd_sample_obs.append(obs)
+                            for extra_step in range(self.additional_steps):
+                                step2_obs_dict={'language_goal': obs_dict['language_goal'].cpu().numpy()}
+                                for key in reshaped_obs_dict.keys():
+                                    if key=='language_goal':
+                                        continue
+                                    step2_obs_dict[key] = np.stack([np.stack([cv2.resize(one_env_obs_step[key].transpose(1,2,0), (128,128), interpolation=cv2.INTER_AREA).transpose(2,0,1) for one_env_obs_step in one_env_obs[-2:]]) for one_env_obs in obs])
+                                step2_obs_dict = dict_apply(step2_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+                                step2_actions = policy.predict_action(step2_obs_dict)[0]['action_pred'].detach().to('cpu').numpy()
+                                add_on = np.tile([0., -0.,  0.,  0., -1.], (step2_actions.shape[0], step2_actions.shape[1], 1))
+                                step2_extended_env_action = np.concatenate((step2_actions, add_on), axis=-1)
+                                obs = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, :8] for i in range(step2_extended_env_action.shape[0])])
+                                step2_sd_sample_obs[extra_step].append(obs)
+                            env.call_each('reset_after_hallucination',args_list=[(curr_state,) for curr_state in current_state])
 
-                        sampled_actions = []
-                        all_action_logits=[]
+                        print('saving videos')
+                        os.makedirs(f'{self.output_dir}/videos',exist_ok=True)
+                        videos = [{'robot0_agentview_right_image': [],'robot0_agentview_left_image': [],'robot0_eye_in_hand_image': []} for _ in range(env.num_envs)]
+                        for sample_idx, one_of_n_samples in enumerate(sd_sample_obs):
+                            for env_idx, one_env in enumerate(one_of_n_samples):
+                                for view in ['robot0_agentview_right_image','robot0_agentview_left_image','robot0_eye_in_hand_image']:
+                                    list_of_images = [img[view] for img in one_env]
+                                    for _,v in step2_sd_sample_obs.items():
+                                        list_of_images+=[img[view] for img in v[sample_idx][env_idx]]
+                                    images_to_video(list_of_images,output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')
+                                    videos[env_idx][view].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')                        
+                        # print('querying gemini')
+                        # # if not self.prompt_with_video:
+                        # os.makedirs(f'{self.output_dir}/demos/', exist_ok=True)
+                        # for env_idx in range(len(all_samples_obs)):
+                        #     for sample_idx in range(len(all_samples_obs)): 
+                        #         Image.fromarray((all_samples_obs[sample_idx][env_idx]['robot0_agentview_right_image'].transpose(1,2,0)*255).astype(np.uint8)).save(f'{self.output_dir}/demos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.jpg')
+                        # best_samples_idx = get_gemini_value(current_obs,all_samples_obs, [x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
+                        # else:
+                        #     best_samples_idx = get_gemini_value_video(videos,[x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
 
-                        temp_chunk = classifier_batch_size/self.num_samples
-                        numberof_samples_to_process_at_a_time = classifier_batch_size if temp_chunk <= 1 else self.num_samples
-                        numberof_diffusion_batches_to_process_at_a_time = 1 if temp_chunk <= 1 else math.floor(temp_chunk)
-                        print(numberof_diffusion_batches_to_process_at_a_time,numberof_samples_to_process_at_a_time)
+                        # print('best actions idx:', [v['best_idx'] for k,v in best_samples_idx.items()])
                         
-                        print('STARTED getting action preds')
-                        for i_dpbatch in tqdm.tqdm(range(0, diffusion_batch_size, numberof_diffusion_batches_to_process_at_a_time), desc="Diffusion Batches"):
-                            curr_diffusion_batch_start = i_dpbatch * numberof_diffusion_batches_to_process_at_a_time
-                            curr_diffusion_batch_end = (i_dpbatch+1)* numberof_diffusion_batches_to_process_at_a_time
-                            # obs_chunk = dict_apply(obs_dict, lambda x: x[curr_diffusion_batch_start:curr_diffusion_batch_end].repeat_interleave(numberof_samples_to_process_at_a_time, dim=0))
-                            for i_samplebatch in tqdm.tqdm(range(0,self.num_samples, numberof_samples_to_process_at_a_time), desc="Sampling Actions", leave=False):
-        
-                                num_samples_repeat=min(numberof_samples_to_process_at_a_time,self.num_samples-i_samplebatch)
-                                if num_samples_repeat!=numberof_samples_to_process_at_a_time:
-                                    print('just wanted to check on this')
-                                    pdb.set_trace()
-                                    print('just wanted to check on this')
-                                obs_chunk = dict_apply(obs_dict, lambda x: x[curr_diffusion_batch_start:curr_diffusion_batch_end].unsqueeze(1).expand(-1, num_samples_repeat, *x.shape[1:]).reshape(-1, *x.shape[1:]))
-                                repeated_obs = concated_current_obs[curr_diffusion_batch_start:curr_diffusion_batch_end].unsqueeze(1).expand(-1, num_samples_repeat, *concated_current_obs.shape[1:]).reshape(-1, *concated_current_obs.shape[1:])
-                                pdb.set_trace()
-                                action_chunk = policy.predict_action(obs_chunk)[0]['action']
-                                sampled_actions.append(action_chunk.detach().cpu())
-                                flattened_actions=action_chunk.view(-1, action_chunk.shape[1] * action_chunk.shape[2])
-                                classifier_inputs = torch.cat([flattened_actions, repeated_obs.to(flattened_actions.device)], dim=1)
-                                logits = classifier(classifier_inputs).squeeze(-1)  # Shape: (batch_size,)
-                                probs = F.sigmoid(logits)  # 🔁 Apply sigmoid manually
-                                all_action_logits.append(probs.detach().cpu())
-                        print('FINISHED getting action preds)')
-                        stacked_actions = torch.cat(sampled_actions, dim=0).view(diffusion_batch_size, self.num_samples, action_chunk.shape[1], action_chunk.shape[2])
-                        all_action_logits = torch.cat(all_action_logits, dim=0).view(diffusion_batch_size, self.num_samples)
+                        # chunk_step_actions[chunk_idx][env_step_index]=[v['best_idx'] for k,v in best_samples_idx.items()]
+                        # json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
                         
-                        # Pick best sample per original observation
-                        max_logits, best_indices = all_action_logits.max(dim=1)  # Shape: (B,)
-                        batch_indices = torch.arange(diffusion_batch_size, device=stacked_actions.device)
+                        # actions=actions[np.arange(actions.shape[0]), [v['best_idx'] for k,v in best_samples_idx.items()], :8, :]
+                        # action_dict={'action':torch.tensor(actions).to(device)}
 
-                        best_actions = stacked_actions[batch_indices, best_indices]  # Shape: (B, A1, A2)
 
-                        # Final output
-                        action_dict = {'action': best_actions}
 
+                        actions=actions[:, 0, :8, :]
+                        action_dict={'action':torch.tensor(actions).to(device)}
+                    else:
+                        print(f'step: {env_step_index}')
+                        action_dict, classifier_action_pred = policy.predict_action(obs_dict)
+                        # pdb.set_trace()
+                        """
+                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(100, dim=0)) 
+                        temp=policy.predict_action(reshaped_obs_dict)[0]['action']
+                        temp=temp.view(-1,100,8,7)
+                        for idx in range(6): print('idx:',idx,temp[idx].var(dim=0).mean())
+                        """
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,lambda x: x.detach().to('cpu').numpy())
 
@@ -577,7 +840,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 
                 add_on = np.tile([0., -0.,  0.,  0., -1.], (env_action.shape[0], env_action.shape[1], 1))
                 extended_env_action = np.concatenate((env_action, add_on), axis=-1)
+                # start=time.time()
                 obs, reward, done, info = env.step(extended_env_action)
+                # end=time.time()
+                # print(colored(f'env step time: {end - start}','green'))
 
                 if classifier and self.show_classifier_scores:
                     if 'save_rollout_classification_scores_1_before' not in locals():
@@ -619,7 +885,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 # update pbar
                 pbar.update(extended_env_action.shape[1])
                 if self.debug:
-                    if env_step_index==2:
+                    if env_step_index==10:
                         done=True     
                 # if chunk_idx+1<n_chunks:
                 #     done=True

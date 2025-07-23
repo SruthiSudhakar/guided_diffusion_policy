@@ -65,8 +65,6 @@ class RobomimicImageWrapper(gym.Env):
             else:
                 raise RuntimeError(f"Unsupported type {key}")
             
-            if shape==[3,128,128]:
-                shape==[3,256,256]
             this_space = spaces.Box(
                 low=min_value,
                 high=max_value,
@@ -85,8 +83,9 @@ class RobomimicImageWrapper(gym.Env):
         self.render_cache = [raw_obs[x] for x in self.render_obs_key]
         obs = dict()
         for key in self.observation_space.keys():
-            if key in self.render_obs_key:
-                raw_obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), (128, 128), interpolation=cv2.INTER_AREA).transpose(2,0,1)
+            if key in self.render_obs_key and self.observation_space[key].shape!=raw_obs[key].shape:
+                resize_shape=self.observation_space[key].shape[1:]
+                raw_obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), resize_shape, interpolation=cv2.INTER_AREA).transpose(2,0,1)
             if key=='language_goal':
                 #TODO: what if we change the language goal? this should not return the old language goal then.
                 raw_obs['language_goal'] = self.language_goal
@@ -139,6 +138,10 @@ class RobomimicImageWrapper(gym.Env):
         raw_obs, reward, done, info = self.env.step(action)
         obs = self.get_observation(raw_obs)
         return obs, reward, done, info
+
+    def hallucinate_step(self, action):
+        raw_obs, reward, done, info = self.env.step(action)
+        return raw_obs, reward, done, info
     
     def render(self, mode='rgb_array'):
         if self.render_cache is None:
