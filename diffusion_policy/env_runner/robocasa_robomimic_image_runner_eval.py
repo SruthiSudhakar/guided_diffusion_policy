@@ -103,19 +103,20 @@ from transformers import CLIPTokenizer, CLIPModel
 import torch
 SYSTEM_PROMPT_CRITIC = """You are a helpful video analyzer."""
 USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plate near the sink.\n\nWatch what happens AFTER the robot picks up the object:\n- TOWARDS: Robot successfully moves the object towards the plate (task succeeds)\n- AWAY: Robot fails and moves the object away from the plate (task fails)\n\nImportant: Judge based on whether the robot completes the task successfully or not.\n\nYour response MUST be:\nDirection: [TOWARDS/AWAY]\nConfidence: [High/Medium/Low]\nReasoning: [Brief explanation]"
-MODEL_PATH = "/proj/vondrick3/sruthi/robots/sruthi_cosmos_reason1/models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
+MODEL_PATH = 'nvidia/Cosmos-Reason1-7B' #"/proj/vondrick3/sruthi/robots/sruthi_cosmos_reason1/models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
 print('THE MODEL PATH IS', MODEL_PATH)
 TEMPRATURE = 0.3
 LLM_GPU_ID=7
 # Initialize LLM once
 print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-pdb.set_trace()
+
 llm = LLM(
     model=MODEL_PATH,
     limit_mm_per_prompt={"image": 1, "video": 1},
     enforce_eager=True,
     device=f'cuda:{LLM_GPU_ID}',
-    max_num_seqs=100,  # Allow batch processing
+    max_num_seqs=10,  # Allow batch processing
+    gpu_memory_utilization=0.6,
 )
 
 sampling_params = SamplingParams(
@@ -226,8 +227,6 @@ def get_gemini_response(env_idx, view, history_prompt, prompt_list):
                 raise e
     return env_idx, view, response, prompt_list
 def get_vlm_rank(all_video_paths, object_ids, step_idx):
-    
-
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Use tqdm to show the progress bar
         futures = []
