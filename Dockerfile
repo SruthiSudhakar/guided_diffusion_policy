@@ -97,7 +97,7 @@ RUN cd .. && \
 RUN cd ..
 
 RUN pip install -r docker_requirements.txt
-RUN pip uninstall gym
+
 # Set environment variables for MuJoCo/OpenGL rendering
 ENV PYOPENGL_PLATFORM=osmesa
 ENV MUJOCO_GL=osmesa

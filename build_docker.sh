@@ -4,12 +4,12 @@
 
 # Set variables
 IMAGE_NAME="guided_diffusion_policy_dockerimage"
-TAG="dpsvd_dockerimage"
+TAG="2"
 
 echo "Building Docker image: ${IMAGE_NAME}:${TAG}"
 
 # Build the Docker image
-docker build -f Dockerfile . -t ${IMAGE_NAME}:${TAG} .
+docker build -f Dockerfile . -t ${IMAGE_NAME}:${TAG}
 
 # Check if build was successful
 if [ $? -eq 0 ]; then

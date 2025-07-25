@@ -7,10 +7,13 @@
 cd externals/robocasa
 pip install -e .
 # clone gym, edit the setup.py, install gym from source 
-pip uninstall gym
+pip install vllm==0.8.5
+pip install qwen_vl_utils==0.0.11
+pip uninstall gym -y
 cd ../gym 
 pip install -e .
-pip show numpy
+pip uninstall numpy -y
+pip install --force-reinstall --no-cache-dir numpy==1.23.3
 # pip uninstall numpy
 # pip uninstall numpy
 # pip install --force-reinstall --no-cache-dir numpy==1.23.3
