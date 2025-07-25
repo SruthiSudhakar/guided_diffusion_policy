@@ -9,7 +9,7 @@ TAG="dpsvd_dockerimage"
 echo "Building Docker image: ${IMAGE_NAME}:${TAG}"
 
 # Build the Docker image
-docker build -t ${IMAGE_NAME}:${TAG} .
+docker build -f Dockerfile . -t ${IMAGE_NAME}:${TAG} .
 
 # Check if build was successful
 if [ $? -eq 0 ]; then

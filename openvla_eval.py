@@ -118,11 +118,11 @@ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_poli
     --additional_steps 4
 
 
-python openvla_eval.py --checkpoint /home/sruthisudhakar/guided_diffusion_policy/data/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:0 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path test_dataset \
+    --list_dataset_path PnPSinkToCounter_Human \
     --n_envs 2 \
     --specific_train_exs 2 \
     --n_test 1 \
@@ -151,7 +151,7 @@ from omegaconf import OmegaConf,open_dict
 import datetime
 import yaml
 import h5py
-from data.dataset_registery import DATASETS
+from data.dgx_data_registery import DATASETS
 from termcolor import colored
 import time
 import numpy as np

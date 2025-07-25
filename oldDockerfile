@@ -96,8 +96,6 @@ RUN cd .. && \
 
 RUN cd ..
 
-RUN pip install -r docker_requirements.txt
-RUN pip uninstall gym
 # Set environment variables for MuJoCo/OpenGL rendering
 ENV PYOPENGL_PLATFORM=osmesa
 ENV MUJOCO_GL=osmesa
@@ -106,13 +104,3 @@ ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 # Set the default command to activate the conda environment
 ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "dpsvd"]
 CMD ["/bin/bash"]
-
-# AFTER STARTING DOCKER IMAGE:
-# pip install robocasa
-# clone gym, edit the setup.py, install gym from source 
-# pip uninstall gym
-# cd externals/gym && pip install -e .
-# pip show numpy
-# pip uninstall numpy
-# pip uninstall numpy
-# pip install --force-reinstall --no-cache-dir numpy==1.23.3
