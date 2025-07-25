@@ -18,6 +18,7 @@ fuse.cfg
 *.png
 *.pdf
 *.txt
+!docker_requirements.txt
 *.TXT
 MUJOCO_LOG.TXT
 *.npy
