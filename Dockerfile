@@ -1,119 +1,107 @@
-# Use an NVIDIA CUDA base image with CUDA 12.1 and Ubuntu 20.04
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu20.04
+# Use NVIDIA CUDA base image with Ubuntu 20.04 and CUDA 11.6 (matching conda env)
+FROM nvidia/cuda:11.6.2-cudnn8-devel-ubuntu20.04
 
-# Set working directory
-WORKDIR /app
-
-# Set non-interactive environment to avoid prompts
+# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH=/opt/conda/bin:$PATH
+ENV CONDA_AUTO_UPDATE_CONDA=false
 
-# Install a broad set of common system packages
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    # Build tools and essentials
+    wget \
+    git \
+    vim \
+    curl \
+    ca-certificates \
+    sudo \
     build-essential \
     cmake \
-    git \
-    wget \
-    curl \
-    unzip \
-    # Python build dependencies
-    zlib1g-dev \
-    libncurses5-dev \
-    libgdbm-dev \
-    libnss3-dev \
-    libssl-dev \
-    libreadline-dev \
-    libffi-dev \
-    libbz2-dev \
-    # Graphics and OpenCV dependencies
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Miniconda
+RUN wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+    /bin/bash /tmp/miniconda.sh -b -p /opt/conda && \
+    rm /tmp/miniconda.sh && \
+    /opt/conda/bin/conda clean -afy
+
+# Install mujoco and OpenGL dependencies
+RUN apt-get update && apt-get install -y \
+    libosmesa6-dev \
     libgl1-mesa-glx \
-    libgl1-mesa-dev \
-    libglew-dev \
+    libglfw3 \
     libglfw3-dev \
+    patchelf \
+    libglu1-mesa \
+    libglu1-mesa-dev \
+    libglew-dev \
+    libegl1-mesa-dev \
+    libgles2-mesa-dev \
+    libnvidia-gl-470 \
+    xvfb \
+    # OpenCV dependencies
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
-    libxrandr2 \
-    libxinerama1 \
-    libxcursor1 \
-    libxi6 \
-    # Image and video processing
-    libpng-dev \
-    libjpeg-dev \
-    libtiff-dev \
-    libavcodec-dev \
-    libavformat-dev \
-    libswscale-dev \
-    libv4l-dev \
+    libgomp1 \
+    # Video processing
     ffmpeg \
-    # Linear algebra and numerical libraries
-    libatlas-base-dev \
-    liblapack-dev \
-    gfortran \
-    # Miscellaneous utilities
-    libsqlite3-dev \
-    vim \
-    nano \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install Python 3.9.21 from source
-RUN wget https://www.python.org/ftp/python/3.9.21/Python-3.9.21.tar.xz \
-    && tar -xf Python-3.9.21.tar.xz \
-    && cd Python-3.9.21 \
-    && ./configure --enable-optimizations \
-    && make -j$(nproc) \
-    && make altinstall \
-    && cd .. \
-    && rm -rf Python-3.9.21 Python-3.9.21.tar.xz \
-    && ln -s /usr/local/bin/python3.9 /usr/local/bin/python \
-    && ln -s /usr/local/bin/pip3.9 /usr/local/bin/pip
+# Set working directory
+WORKDIR /app
 
-# Verify Python version
-RUN python --version
+# Copy conda environment file first (for better caching)
+COPY dockersupport_environment.yml .
 
-# # Set up a non-root user with host UID/GID
-# ARG USER_ID  # Replace with your UID
-# ARG GROUP_ID  # Replace with your GID
-# RUN groupadd -g ${GROUP_ID} mygroup && \
-#     useradd -u ${USER_ID} -g ${GROUP_ID} -m -s /bin/bash myuser
+# Create conda environment
+RUN conda env create -f dockersupport_environment.yml && \
+    conda clean -afy
 
-# Copy the model training folder and dataset folder
-# COPY dp_exp_1_resnet/ ./dp_exp_1_resnet/
-# COPY datasets/ ./datasets/
+# Make RUN commands use the new environment
+SHELL ["conda", "run", "-n", "dpsvd", "/bin/bash", "-c"]
 
-# Install Python dependencies (modify as needed)
-RUN pip install --upgrade pip
-# RUN pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu121
-# RUN pip install numpy pandas scikit-learn matplotlib
+# Copy the rest of the project files
+COPY . .
 
-# Optional: If you have a requirements.txt, uncomment and adjust the path
-COPY requirements.txt .
-RUN pip install --no-deps -r requirements.txt
+# Create externals2 folder and clone robocasa
+RUN mkdir -p externals2 && \
+    cd externals2 && \
+    git clone https://github.com/SruthiSudhakar/robocasa.git && \
+    cd robocasa && \
+    git checkout main && \
+    pip install -e . && \
 
-# # Change ownership of /app to the new user
-# RUN chown -R myuser:mygroup /app
+    git clone https://github.com/SruthiSudhakar/robomimic.git && \
+    cd ../robomimic && \
+    git checkout main && \
+    pip install -e . && \
 
-# # Switch to the non-root user
-# USER myuser
+    git clone https://github.com/SruthiSudhakar/robosuite.git && \
+    cd ../robosuite && \
+    git checkout master && \
+    pip install -e . && \
+    
+    git clone https://github.com/SruthiSudhakar/diffusers.git && \
+    cd ../diffusers && \
+    git checkout my-edits && \
+    pip install -e . && \
 
-# Set environment variables for the training command
-ENV PYTHONPATH=.
-ENV CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-# ENV CUDA_VISIBLE_DEVICES=2,3
-ENV HYDRA_FULL_ERROR=1
+    pip uninstall numpy && \
+    pip uninstall numpy && \
+    pip install --force-reinstall --no-cache-dir numpy==1.23.3 && \
+
+    cd ../robocasa && \
+    python robocasa/scripts/download_kitchen_assets.py && \
+
+    cd ../..
+
+# Set environment variables for MuJoCo/OpenGL rendering
 ENV PYOPENGL_PLATFORM=osmesa
 ENV MUJOCO_GL=osmesa
-ENV MESA_LOADER_DRIVER_OVERRIDE=osmesa
-ENV LIBGL_ALWAYS_SOFTWARE=1
-ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
-ENV DISPLAY=""
-ENV MESA_SHADER_CACHE_DIR=/local/vondrick/sruthi/mujoco_env/mesa_shader_cache
+ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH
 
-# Set the working directory to the model training folder
-WORKDIR /app/video_model
-
-# Command to run the training script
-# CMD ["python", "main.py", "--base=configs/basile_svd_finetune.yaml", "--name=ft1", "--seed=24", "--num_nodes=1", "--wandb=0", "lightning.trainer.devices=0,1,2,3,4,5,6,7", "model.params.use_ema=False"]
-# CMD ["python", "main.py", "--base=configs/basile_svd_finetune.yaml", "--name=ft1", "--seed=24", "--num_nodes=1", "--wandb=0", "lightning.trainer.devices=0,1", "model.params.use_ema=False"]
+# Set the default command to activate the conda environment
+ENTRYPOINT ["conda", "run", "--no-capture-output", "-n", "dpsvd"]
+CMD ["/bin/bash"]
