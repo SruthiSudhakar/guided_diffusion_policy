@@ -31,7 +31,7 @@ import cv2
 import json
 import torch.nn.functional as F
 from PIL import Image
-from google import genai
+# from google import genai
 import google
 import ast
 import concurrent.futures
@@ -39,9 +39,9 @@ import time
 from typing_extensions import TypedDict, NotRequired, Annotated
 import PIL
 import logging; logging.disable(logging.CRITICAL)
-from transformers import AutoProcessor
-from vllm import LLM, SamplingParams
-from qwen_vl_utils import process_vision_info
+# from transformers import AutoProcessor
+# from vllm import LLM, SamplingParams
+# from qwen_vl_utils import process_vision_info
 
 import logging
 from contextlib import contextmanager
@@ -78,7 +78,7 @@ class Output(TypedDict):
     actions: list[Action]
     best_action: Action
     error: NotRequired[str]        # optional field for graceful failures
-client = genai.Client(api_key="AIzaSyD6MKO5Hn1ryZ4mqqnLCGNvsERNXcS5pI8")
+# client = genai.Client(api_key="AIzaSyD6MKO5Hn1ryZ4mqqnLCGNvsERNXcS5pI8")
 # model = genai.GenerativeModel("models/gemini-2.0-flash")
 
 def create_env(env_meta, shape_meta, object, enable_render=True):
@@ -106,126 +106,129 @@ USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plat
 MODEL_PATH = 'nvidia/Cosmos-Reason1-7B' #"/proj/vondrick3/sruthi/robots/sruthi_cosmos_reason1/models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
 print('THE MODEL PATH IS', MODEL_PATH)
 TEMPRATURE = 0.3
-LLM_GPU_ID=7
-# Initialize LLM once
-print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+# LLM_GPU_ID=7
+# # Initialize LLM once
+# print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
 
-llm = LLM(
-    model=MODEL_PATH,
-    limit_mm_per_prompt={"image": 1, "video": 1},
-    enforce_eager=True,
-    device=f'cuda:{LLM_GPU_ID}',
-    max_num_seqs=10,  # Allow batch processing
-    gpu_memory_utilization=0.6,
-)
+# llm = LLM(
+#     model=MODEL_PATH,
+#     limit_mm_per_prompt={"image": 1, "video": 1},
+#     enforce_eager=True,
+#     device=f'cuda:{LLM_GPU_ID}',
+#     max_num_seqs=10,  # Allow batch processing
+#     gpu_memory_utilization=0.6,
+# )
 
-sampling_params = SamplingParams(
-    n=1,
-    temperature=TEMPRATURE,
-    top_k=50,
-    top_p=0.95,
-    repetition_penalty=1.05,
-    max_tokens=4096,
-)
+# sampling_params = SamplingParams(
+#     n=1,
+#     temperature=TEMPRATURE,
+#     top_k=50,
+#     top_p=0.95,
+#     repetition_penalty=1.05,
+#     max_tokens=4096,
+# )
 
 # Initialize processor once
-processor = AutoProcessor.from_pretrained(MODEL_PATH)
+# processor = AutoProcessor.from_pretrained(MODEL_PATH)
 
 def preprocess_video(video_info, processor):
-    """Preprocess a single video for batch processing"""
+    pass
+    # """Preprocess a single video for batch processing"""
     
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
-        {"role": "user", "content": [
-                {"type": "text", "text": USER_PROMPT_CRITIC},
-                {
-                    "type": "video",
-                    "video": video_info,
-                    "fps": 1,
-                },
-            ]
-        },
-    ]
+    # messages = [
+    #     {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
+    #     {"role": "user", "content": [
+    #             {"type": "text", "text": USER_PROMPT_CRITIC},
+    #             {
+    #                 "type": "video",
+    #                 "video": video_info,
+    #                 "fps": 1,
+    #             },
+    #         ]
+    #     },
+    # ]
     
-    prompt = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
+    # prompt = processor.apply_chat_template(
+    #     messages,
+    #     tokenize=False,
+    #     add_generation_prompt=True,
+    # )
+    # image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
     
-    mm_data = {}
-    if image_inputs is not None:
-        mm_data["image"] = image_inputs
-    if video_inputs is not None:
-        mm_data["video"] = video_inputs
+    # mm_data = {}
+    # if image_inputs is not None:
+    #     mm_data["image"] = image_inputs
+    # if video_inputs is not None:
+    #     mm_data["video"] = video_inputs
     
-    llm_inputs = {
-        "prompt": prompt,
-        "multi_modal_data": mm_data,
-        "mm_processor_kwargs": video_kwargs,
-    }
+    # llm_inputs = {
+    #     "prompt": prompt,
+    #     "multi_modal_data": mm_data,
+    #     "mm_processor_kwargs": video_kwargs,
+    # }
     
-    return {
-        'llm_inputs': llm_inputs,
-        'video_path': video_info,
-    }
+    # return {
+    #     'llm_inputs': llm_inputs,
+    #     'video_path': video_info,
+    # }
 def process_batch(llm, video_batch, processor, sampling_params):
-    """Process a batch of videos using the LLM"""
-    # Preprocess all videos in parallel
-    with ThreadPoolExecutor(max_workers=mp.cpu_count()) as executor:
-        preprocessed = list(executor.map(
-            lambda v: preprocess_video(v, processor),
-            video_batch
-        ))
+    pass
+    # """Process a batch of videos using the LLM"""
+    # # Preprocess all videos in parallel
+    # with ThreadPoolExecutor(max_workers=mp.cpu_count()) as executor:
+    #     preprocessed = list(executor.map(
+    #         lambda v: preprocess_video(v, processor),
+    #         video_batch
+    #     ))
     
-    # Extract LLM inputs
-    llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
+    # # Extract LLM inputs
+    # llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
     
-    # Batch inference
-    outputs = llm.generate(llm_inputs_list, sampling_params)
+    # # Batch inference
+    # outputs = llm.generate(llm_inputs_list, sampling_params)
     
-    # Collect results
-    results = {}
-    for i, output in enumerate(outputs):
-        generated_text = [o.text for o in output.outputs]
-        video_path = preprocessed[i]['video_path']
+    # # Collect results
+    # results = {}
+    # for i, output in enumerate(outputs):
+    #     generated_text = [o.text for o in output.outputs]
+    #     video_path = preprocessed[i]['video_path']
         
-        results[video_path] = generated_text
+    #     results[video_path] = generated_text
     
-    return results
+    # return results
 
-video_paths_list=['data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_10_9p6a2h08.mp4',
-                  'data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_14_3h10g3fd.mp4']
-batch_results = process_batch(llm, video_paths_list, processor, sampling_params)
-print(batch_results)
+# video_paths_list=['data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_10_9p6a2h08.mp4',
+#                   'data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_14_3h10g3fd.mp4']
+# batch_results = process_batch(llm, video_paths_list, processor, sampling_params)
+# print(batch_results)
 # Load the CLIP model and tokenizer
 clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
 clip_model = CLIPModel.from_pretrained(clip_model_name)
 def get_gemini_response(env_idx, view, history_prompt, prompt_list):
-    # Start chat and send message
-    retries = 5
-    for attempt in range(retries):
-        try:
-            response = client.models.generate_content(
-                model='gemini-2.0-flash',
-                contents=prompt_list,
-                config={
-                    'response_mime_type': 'application/json',
-                    'response_schema': Output,
-                },
-            )
-            break  # If the request is successful, exit the loop
-        except Exception as e:
-            if attempt < retries - 1:
-                wait_time = 2 ** attempt      # Exponential backoff
-                print(f"Retrying in {wait_time} seconds...")
-                time.sleep(wait_time)
-            else:
-                print("Max retries reached. Operation failed.")
-                raise e
-    return env_idx, view, response, prompt_list
+    pass
+#     # Start chat and send message
+#     retries = 5
+#     for attempt in range(retries):
+#         try:
+#             response = client.models.generate_content(
+#                 model='gemini-2.0-flash',
+#                 contents=prompt_list,
+#                 config={
+#                     'response_mime_type': 'application/json',
+#                     'response_schema': Output,
+#                 },
+#             )
+#             break  # If the request is successful, exit the loop
+#         except Exception as e:
+#             if attempt < retries - 1:
+#                 wait_time = 2 ** attempt      # Exponential backoff
+#                 print(f"Retrying in {wait_time} seconds...")
+#                 time.sleep(wait_time)
+#             else:
+#                 print("Max retries reached. Operation failed.")
+#                 raise e
+#     return env_idx, view, response, prompt_list
 def get_vlm_rank(all_video_paths, object_ids, step_idx):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         # Use tqdm to show the progress bar
@@ -535,7 +538,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     for j in range(batch_size):
                         idx = (i + j) % len(f['data'])
                         train_idx = train_start_idx + idx
-                        ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta", None)
+                        ep_meta = f[f'data/demo_{train_idx+1}'].attrs.get("ep_meta", None)
                         text = json.loads(ep_meta)['lang']
                         texts_batch.append(text)
                         batch_indices.append(train_idx)            
@@ -547,7 +550,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             
                     # Append the embeddings to the list
                     train_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
-        
+
         with h5py.File(dataset_path, 'r') as f:
             embedding_idx=0
             if len(specific_train_exs)>0:
@@ -561,9 +564,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 else:
                     train_idx = train_start_idx + (i % len(f['data']))
                 enable_render = True
-                init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
-                env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
-                ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
+                init_state = f[f'data/demo_{train_idx+1}/states'][start_rollout_from_state]
+                env_model = f[f'data/demo_{train_idx+1}'].attrs["model_file"]
+                ep_meta = f[f'data/demo_{train_idx+1}'].attrs.get("ep_meta",None)
                 language_goal_embedding = train_embeddings_list[embedding_idx]
                 embedding_idx+=1
 
@@ -608,7 +611,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 for j in range(batch_size):
                     idx = (i + j) % len(f['data'])
                     test_idx = train_start_idx + idx
-                    ep_meta = f[f'data/demo_{test_idx}'].attrs.get("ep_meta", None)
+                    ep_meta = f[f'data/demo_{test_idx+1}'].attrs.get("ep_meta", None)
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
                     batch_indices.append(test_idx)            
@@ -625,9 +628,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 seed = test_start_seed + i
                 enable_render = i < n_test_vis
                 test_idx = train_start_idx + (i % len(f['data']))
-                init_state = f[f'data/demo_{test_idx}/states'][start_rollout_from_state]
-                env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
-                ep_meta = json.loads(f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None))
+                init_state = f[f'data/demo_{test_idx+1}/states'][start_rollout_from_state]
+                env_model = f[f'data/demo_{test_idx+1}'].attrs["model_file"]
+                ep_meta = json.loads(f[f'data/demo_{test_idx+1}'].attrs.get("ep_meta",None))
                 if change_test_textures:
                     if 'gen_textures' in ep_meta:
                         ep_meta['gen_textures']={}

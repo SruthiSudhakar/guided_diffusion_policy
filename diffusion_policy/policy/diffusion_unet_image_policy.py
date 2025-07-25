@@ -11,7 +11,7 @@ from diffusion_policy.model.diffusion.conditional_unet1d import ConditionalUnet1
 from diffusion_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from diffusion_policy.model.vision.multi_image_obs_encoder import MultiImageObsEncoder
 from diffusion_policy.common.pytorch_util import dict_apply
-from prismatic.vla.action_tokenizer import ActionTokenizer
+# from prismatic.vla.action_tokenizer import ActionTokenizer
 from torchvision import transforms
 
 import pdb
@@ -236,33 +236,33 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
 
         return trajectory, classifier_pred
 
-    def get_class_score(self, trajectory, obs_dict: Dict[str, torch.Tensor], classifier_processor=None, classifier_policy=None, language_goal=None) -> Dict[str, torch.Tensor]:
-            with torch.no_grad():
-                nobs = self.normalizer.normalize(obs_dict)
-                image_obs=dict_apply(nobs, lambda x: x[:,-1,...])
-                action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
+    # def get_class_score(self, trajectory, obs_dict: Dict[str, torch.Tensor], classifier_processor=None, classifier_policy=None, language_goal=None) -> Dict[str, torch.Tensor]:
+    #         with torch.no_grad():
+    #             nobs = self.normalizer.normalize(obs_dict)
+    #             image_obs=dict_apply(nobs, lambda x: x[:,-1,...])
+    #             action_tokenizer=ActionTokenizer(classifier_processor.tokenizer)
                     
-                prompts=[]
-                images=[]
-                for idx in range(trajectory.shape[0]):
-                    traj = trajectory[idx].cpu().numpy()
-                    action_tokens=action_tokenizer(traj)
-                    # action_tokens = [token.replace('\u202d', "ً") for token in action_tokens]
-                    action_tokens=' '.join(action_tokens)
-                    lang_idx = idx if idx<len(language_goal) else 0
-                    prompts.append(f"In: Will taking this sequence of actions lead the robot towards the goal of {language_goal[lang_idx]}? The actions are: {action_tokens}\nOut: ")
-                    images.append(transforms.ToPILImage()(image_obs['robot0_eye_in_hand_image'][idx]))
-                try:
-                    tokenized_inputs=classifier_processor(prompts, images, padding=True, truncation=True,).to(classifier_policy.device, dtype=torch.bfloat16)
-                except:
-                    print('hey something wrong')
-                cpoutput = classifier_policy(input_ids=tokenized_inputs['input_ids'], attention_mask=tokenized_inputs["attention_mask"], pixel_values=tokenized_inputs['pixel_values'], return_dict=True)
-                action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :].detach().cpu()
-                last_valid_indices = (tokenized_inputs["attention_mask"].sum(axis=1) - 1).detach().cpu()  # Get last valid token index
-                batch_indices = torch.arange(tokenized_inputs["attention_mask"].size(0))  # [0, 1, 2, ..., batch_size-1]
-                guided_towards=1
-                print(f'action_preds:', action_logits.argmax(dim=-1)[batch_indices,last_valid_indices])
-                return action_logits[batch_indices,last_valid_indices,classifier_processor.tokenizer.vocab[str(int(guided_towards))]]
+    #             prompts=[]
+    #             images=[]
+    #             for idx in range(trajectory.shape[0]):
+    #                 traj = trajectory[idx].cpu().numpy()
+    #                 action_tokens=action_tokenizer(traj)
+    #                 # action_tokens = [token.replace('\u202d', "ً") for token in action_tokens]
+    #                 action_tokens=' '.join(action_tokens)
+    #                 lang_idx = idx if idx<len(language_goal) else 0
+    #                 prompts.append(f"In: Will taking this sequence of actions lead the robot towards the goal of {language_goal[lang_idx]}? The actions are: {action_tokens}\nOut: ")
+    #                 images.append(transforms.ToPILImage()(image_obs['robot0_eye_in_hand_image'][idx]))
+    #             try:
+    #                 tokenized_inputs=classifier_processor(prompts, images, padding=True, truncation=True,).to(classifier_policy.device, dtype=torch.bfloat16)
+    #             except:
+    #                 print('hey something wrong')
+    #             cpoutput = classifier_policy(input_ids=tokenized_inputs['input_ids'], attention_mask=tokenized_inputs["attention_mask"], pixel_values=tokenized_inputs['pixel_values'], return_dict=True)
+    #             action_logits = cpoutput.logits[:,classifier_policy.vision_backbone.featurizer.patch_embed.num_patches :].detach().cpu()
+    #             last_valid_indices = (tokenized_inputs["attention_mask"].sum(axis=1) - 1).detach().cpu()  # Get last valid token index
+    #             batch_indices = torch.arange(tokenized_inputs["attention_mask"].size(0))  # [0, 1, 2, ..., batch_size-1]
+    #             guided_towards=1
+    #             print(f'action_preds:', action_logits.argmax(dim=-1)[batch_indices,last_valid_indices])
+    #             return action_logits[batch_indices,last_valid_indices,classifier_processor.tokenizer.vocab[str(int(guided_towards))]]
 
 
 

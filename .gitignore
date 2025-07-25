@@ -149,3 +149,5 @@ dmypy.json
 
 test/
 externals/
+externals2/
+post_steps.sh
