@@ -7,53 +7,6 @@ export MUJOCO_GL=osmesa
 export HYDRA_FULL_ERROR=1
 
 Usage:
-cv17
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:2 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 11 \
-    --specific_train_exs 169,175,182,183,206,207,214,240,241,247 \
-    --n_test 1 \
-    --max_steps 200 \
-    --start_rollout_from_state 140 \
-    --prefix_dir may8_gemini \
-    --choose_sample \
-    --num_samples 10 \
-    --end_sampling 28 \
-    --add mr140_se169_247
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:1 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val \
-    --n_envs 4 \
-    --specific_train_exs 10,126,131 \
-    --n_test 1 \
-    --start_rollout_from_state 0 \
-    --prefix_dir may8_gemini \
-    --choose_sample \
-    --num_samples 4 \
-    --end_sampling 46 \
-    --add mr0_se10_126_131
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:1 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 14 \
-    --specific_train_exs 10,126,131,169,175,182,183,206,207,214,240,241,247 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --prefix_dir jul22test \
-    --choose_sample \
-    --num_samples 4 \
-    --end_sampling 32 \
-    --add test
-
 python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:4 \
     --robocasa \
@@ -69,66 +22,72 @@ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_poli
     --prefix_dir jul22_sample \
     --add mr140_ns4
 
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:4 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 30 \
-    --specific_train_exs 9,9,9,9,9,9,9,9,9,9,2,2,2,2,2,2,2,2,2,2,42,42,42,42,42,42,42,42,42 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --add mr140_9_2_42
-
-    --choose_sample \
-    --num_samples 4 \
-    --prefix_dir jul22_sample \
-    --add mr140_ns4
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:4 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 2 \
-    --specific_train_exs 2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --choose_sample \
-    --num_samples 10 \
-    --prefix_dir jul23_0additionalsteps \
-    --additional_steps 0
-
-
-python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:4 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
-    --n_envs 2 \
-    --specific_train_exs 2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --choose_sample \
-    --num_samples 4 \
-    --prefix_dir jul23_4additionalsteps \
-    --additional_steps 4
-
-
 python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_first100 \
+    --n_envs 50 \
+    --n_train 49 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 3 \
+    --end_sampling 4 \
+    --prefix_dir test  
+
+python openvla_eval.py \
+    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_0_249 \
+    --n_envs 4 \
+    --specific_train_exs 2,110,142 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 10 \
+    --end_sampling 10 \
+    --prefix_dir test_10steps
+
+    
+python openvla_eval.py \
+    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:6 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 9 \
+    --specific_train_exs 2,39,42,110,146,214,241 \
+    --n_test 2 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir mg253_vanilla_specificexs
+
+python openvla_eval.py \
+    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:0 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_Human \
-    --n_envs 2 \
-    --specific_train_exs 2 \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 10 \
+    --specific_train_exs 2,2,2,2,2,2,2,2,2,2 \
     --n_test 1 \
     --start_rollout_from_state 140 \
     --max_steps 200 \
-    --prefix_dir test 
+    --prefix_dir mg253_guided_specificexs \
+    --choose_sample \
+    --num_samples 10 \
+    --additional_steps 10 \
+    --end_sampling 10
+
+--specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
+
 """
 #   
 # /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
@@ -244,7 +203,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 task+=split
     elif 'hdf5' in list_dataset_path:
         list_dataset_path=[list_dataset_path]
-        for split in dataset_path.split('/'):
+        for split in list_dataset_path[0].split('/'):
             if 'PnP' in split:
                 task+=split
     else:

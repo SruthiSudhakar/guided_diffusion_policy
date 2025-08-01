@@ -114,10 +114,10 @@ class MultiStepWrapper(gym.Wrapper):
             if len(self.done) > 0 and self.done[-1]:
                 # termination
                 break
-            start=time.time()
+            # start=time.time()
             observation, reward, done, info = self.env.env.hallucinate_step(act)
-            end=time.time()
-            print(colored(f'{i} step time: {end-start}','red'))
+            # end=time.time()
+            # print(colored(f'{i} step time: {end-start}','red'))
             i+=1
             temp_observations.append(observation)
         # start=time.time()
@@ -127,10 +127,10 @@ class MultiStepWrapper(gym.Wrapper):
         return temp_observations
 
     def reset_after_hallucination(self, reset_to_state):
-        start=time.time()
+        # start=time.time()
         obs = self.env.env.env.reset_to({'states': reset_to_state})
-        end=time.time()
-        print(colored(f'reset time: {end-start}','red'))
+        # end=time.time()
+        # print(colored(f'reset time: {end-start}','red'))
         return obs
 
     def step(self, action):

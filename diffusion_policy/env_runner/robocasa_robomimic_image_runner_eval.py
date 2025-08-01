@@ -39,9 +39,6 @@ import time
 from typing_extensions import TypedDict, NotRequired, Annotated
 import PIL
 import logging; logging.disable(logging.CRITICAL)
-# from transformers import AutoProcessor
-# from vllm import LLM, SamplingParams
-# from qwen_vl_utils import process_vision_info
 
 import logging
 from contextlib import contextmanager
@@ -52,6 +49,100 @@ import numpy as np
 import cv2, numpy as np, os, shutil, subprocess, tempfile
 from concurrent.futures import ThreadPoolExecutor
 import multiprocessing as mp
+import itertools
+import re
+
+import subprocess
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+def get_gpu_with_lowest_memory_util():
+    # Run the nvidia-smi command to get the GPU status
+    result = subprocess.run(['nvidia-smi', '--query-gpu=index,memory.used,memory.total', '--format=csv,noheader,nounits'],
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    
+    # Parse the result and find the GPU with the lowest memory usage
+    gpu_info = result.stdout.strip().split('\n')
+    
+    min_util_gpu = None
+    min_util = float('inf')  # Initialize with a large number
+    
+    for gpu in gpu_info:
+        index, memory_used, memory_total = map(int, gpu.split(', '))
+        memory_util = memory_used / memory_total  # Memory utilization ratio
+        
+        if memory_util < min_util:
+            min_util = memory_util
+            min_util_gpu = index
+
+    return min_util_gpu, min_util
+
+
+def add_text_to_video_with_ffmpeg(input_video_path, text):
+    # Temporary output path
+    temp_video_path = input_video_path + '.temp.mp4'
+    
+    # FFmpeg command to add text to each frame
+    command = [
+        'ffmpeg',
+        '-i', input_video_path,  # Input video file
+        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=#800080:borderw=1:bordercolor=#800080",  # Purple text and border
+        '-c:a', 'copy',  # Copy audio without re-encoding
+        temp_video_path  # Output video file
+    ]
+    
+    # Run the command and suppress logs
+    with open(os.devnull, 'w') as devnull:
+        subprocess.run(command, stdout=devnull, stderr=devnull, check=True)
+    
+    # Rename temporary file to original file after processing
+    os.rename(temp_video_path, input_video_path)
+
+def images_to_video_side_by_side(images1, images2, images3, output_path='output.mp4', fps=10):
+    # Ensure all images are the same size and are in the correct format
+    height, width = images1[0].shape[1], images1[0].shape[2]
+    
+    # Assuming all images in the lists are of the same size and dimensions
+    # Concatenate them side by side (width * 3)
+    new_width = width * 3
+    new_height = height
+
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    video = cv2.VideoWriter(output_path, fourcc, fps, (new_width, new_height))
+
+    # Assuming all three lists have the same length
+    num_frames = len(images1)
+    
+    for i in range(num_frames):
+        # Extract one frame from each list
+        img1 = images1[i]
+        img2 = images2[i]
+        img3 = images3[i]
+        
+        # Ensure each frame is (H, W, C) by transposing from (C, H, W) if needed
+        img1 = np.transpose(img1, (1, 2, 0)) if img1.shape[0] == 3 else img1
+        img2 = np.transpose(img2, (1, 2, 0)) if img2.shape[0] == 3 else img2
+        img3 = np.transpose(img3, (1, 2, 0)) if img3.shape[0] == 3 else img3
+        
+        # Check if the images have an alpha channel and remove it if necessary
+        if img1.shape[-1] == 4:
+            img1 = img1[..., :3]
+        if img2.shape[-1] == 4:
+            img2 = img2[..., :3]
+        if img3.shape[-1] == 4:
+            img3 = img3[..., :3]
+        
+        # Convert the frames to uint8 if necessary (normalize values to 0-255 range)
+        img1 = (img1 * 255).astype(np.uint8) if img1.dtype == np.float32 else img1
+        img2 = (img2 * 255).astype(np.uint8) if img2.dtype == np.float32 else img2
+        img3 = (img3 * 255).astype(np.uint8) if img3.dtype == np.float32 else img3
+
+        # Concatenate the images horizontally (side by side)
+        concatenated_frame = np.hstack((img1, img2, img3))
+
+        # Write the concatenated frame to the video
+        video.write(cv2.cvtColor(concatenated_frame, cv2.COLOR_RGB2BGR))
+
+    video.release()
 
 def images_to_video(images, output_path='output.mp4', fps=10):
     # Assume all images are (3, H, W)
@@ -101,110 +192,123 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
 
 from transformers import CLIPTokenizer, CLIPModel
 import torch
-SYSTEM_PROMPT_CRITIC = """You are a helpful video analyzer."""
-USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plate near the sink.\n\nWatch what happens AFTER the robot picks up the object:\n- TOWARDS: Robot successfully moves the object towards the plate (task succeeds)\n- AWAY: Robot fails and moves the object away from the plate (task fails)\n\nImportant: Judge based on whether the robot completes the task successfully or not.\n\nYour response MUST be:\nDirection: [TOWARDS/AWAY]\nConfidence: [High/Medium/Low]\nReasoning: [Brief explanation]"
-MODEL_PATH = 'nvidia/Cosmos-Reason1-7B' #"/proj/vondrick3/sruthi/robots/sruthi_cosmos_reason1/models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
-print('THE MODEL PATH IS', MODEL_PATH)
-TEMPRATURE = 0.3
-# LLM_GPU_ID=7
-# # Initialize LLM once
-# print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-
-# llm = LLM(
-#     model=MODEL_PATH,
-#     limit_mm_per_prompt={"image": 1, "video": 1},
-#     enforce_eager=True,
-#     device=f'cuda:{LLM_GPU_ID}',
-#     max_num_seqs=10,  # Allow batch processing
-#     gpu_memory_utilization=0.6,
-# )
-
-# sampling_params = SamplingParams(
-#     n=1,
-#     temperature=TEMPRATURE,
-#     top_k=50,
-#     top_p=0.95,
-#     repetition_penalty=1.05,
-#     max_tokens=4096,
-# )
-
-# Initialize processor once
-# processor = AutoProcessor.from_pretrained(MODEL_PATH)
-
-def preprocess_video(video_info, processor):
-    pass
-    # """Preprocess a single video for batch processing"""
-    
-    # messages = [
-    #     {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
-    #     {"role": "user", "content": [
-    #             {"type": "text", "text": USER_PROMPT_CRITIC},
-    #             {
-    #                 "type": "video",
-    #                 "video": video_info,
-    #                 "fps": 1,
-    #             },
-    #         ]
-    #     },
-    # ]
-    
-    # prompt = processor.apply_chat_template(
-    #     messages,
-    #     tokenize=False,
-    #     add_generation_prompt=True,
-    # )
-    # image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
-    
-    # mm_data = {}
-    # if image_inputs is not None:
-    #     mm_data["image"] = image_inputs
-    # if video_inputs is not None:
-    #     mm_data["video"] = video_inputs
-    
-    # llm_inputs = {
-    #     "prompt": prompt,
-    #     "multi_modal_data": mm_data,
-    #     "mm_processor_kwargs": video_kwargs,
-    # }
-    
-    # return {
-    #     'llm_inputs': llm_inputs,
-    #     'video_path': video_info,
-    # }
-def process_batch(llm, video_batch, processor, sampling_params):
-    pass
-    # """Process a batch of videos using the LLM"""
-    # # Preprocess all videos in parallel
-    # with ThreadPoolExecutor(max_workers=mp.cpu_count()) as executor:
-    #     preprocessed = list(executor.map(
-    #         lambda v: preprocess_video(v, processor),
-    #         video_batch
-    #     ))
-    
-    # # Extract LLM inputs
-    # llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
-    
-    # # Batch inference
-    # outputs = llm.generate(llm_inputs_list, sampling_params)
-    
-    # # Collect results
-    # results = {}
-    # for i, output in enumerate(outputs):
-    #     generated_text = [o.text for o in output.outputs]
-    #     video_path = preprocessed[i]['video_path']
-        
-    #     results[video_path] = generated_text
-    
-    # return results
-
-# video_paths_list=['data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_10_9p6a2h08.mp4',
-#                   'data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037/jul22_vanilla/PnPSinkToCounter_mg_val_kbpctk_firsthalf_722192245_mr140_9_2_42/trainmedia/2_14_3h10g3fd.mp4']
-# batch_results = process_batch(llm, video_paths_list, processor, sampling_params)
-# print(batch_results)
 # Load the CLIP model and tokenizer
 clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
 clip_model = CLIPModel.from_pretrained(clip_model_name)
+
+from transformers import AutoProcessor
+from vllm import LLM, SamplingParams
+from qwen_vl_utils import process_vision_info
+SYSTEM_PROMPT_CRITIC = """You are a helpful video analyzer."""
+USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plate near the sink.\n\nWatch what happens AFTER the robot picks up the object:\n- TOWARDS: Robot successfully moves the object towards the plate (task succeeds)\n- AWAY: Robot fails and moves the object away from the plate (task fails)\n\nImportant: Judge based on whether the robot completes the task successfully or not.\n\nYour response MUST be:\nDirection: [TOWARDS/AWAY]\nConfidence: [High/Medium/Low]\nReasoning: [Brief explanation]"
+MODEL_PATH =  "models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
+print('THE MODEL PATH IS', MODEL_PATH)
+TEMPRATURE = 0.3
+
+def preprocess_video(video_info, processor):
+    """Preprocess a single video for batch processing"""
+    
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
+        {"role": "user", "content": [
+                {"type": "text", "text": USER_PROMPT_CRITIC},
+                {
+                    "type": "video",
+                    "video": video_info,
+                    "fps": 1,
+                },
+            ]
+        },
+    ]
+    
+    prompt = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+    )
+    image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
+    
+    mm_data = {}
+    if image_inputs is not None:
+        mm_data["image"] = image_inputs
+    if video_inputs is not None:
+        mm_data["video"] = video_inputs
+    
+    llm_inputs = {
+        "prompt": prompt,
+        "multi_modal_data": mm_data,
+        "mm_processor_kwargs": video_kwargs,
+    }
+    
+    return {
+        'llm_inputs': llm_inputs,
+        'video_path': video_info,
+    }
+def process_batch(llm, video_batch, processor, sampling_params, max_workers=100, chunk_size=100):
+    """Process a batch of videos using the LLM"""
+    # Limit workers to avoid conflicts with AsyncVectorEnv processes
+    # Use max 4 workers to prevent resource exhaustion
+    max_workers = min(max_workers, mp.cpu_count() // 2)
+    
+    # Process in smaller chunks to avoid overwhelming memory/pipes
+    all_results = {}
+    
+    for i in range(0, len(video_batch), chunk_size):
+        chunk = video_batch[i:i + chunk_size]
+        
+        # Preprocess videos in this chunk
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            preprocessed = list(executor.map(
+                lambda v: preprocess_video(v, processor),
+                chunk
+            ))
+        
+        # Extract LLM inputs
+        llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
+        
+        # Batch inference
+        outputs = llm.generate(llm_inputs_list, sampling_params)
+        
+        # Collect results
+        for j, output in enumerate(outputs):
+            video_path = preprocessed[j]['video_path']
+            # all_results[video_path] = generated_text
+
+            # Process all N responses for this video
+            all_responses = []
+            binary_answers = []
+            
+            for response in output.outputs:
+                generated_text = response.text
+                all_responses.append(generated_text)
+                
+                # Extract binary answer from each response
+                match = re.search(r'Direction:\s*\[(TOWARDS|AWAY)\]', generated_text, re.IGNORECASE)
+                if not match:
+                    match = re.search(r'Direction:\s*(TOWARDS|AWAY)', generated_text, re.IGNORECASE)
+                if match:
+                    answer = match.group(1).lower()
+                    binary_answers.append(answer)
+            # Determine final answer by taking max (TOWARDS > AWAY)
+            final_answer = None
+            if binary_answers:
+                towards_count = binary_answers.count('towards')
+                away_count = binary_answers.count('away')
+                final_answer = 'towards' if towards_count >= away_count else ('away' if away_count > towards_count else 'Neither')
+                    
+            all_results[video_path] = {
+                'gentext': all_responses,
+                'individual_answers': binary_answers,
+                'towards_count': binary_answers.count('towards') if binary_answers else 0,
+                'away_count': binary_answers.count('away') if binary_answers else 0,
+                'others_count': len(all_responses) - len(binary_answers),
+                'binary': final_answer,
+                'n_queries': len(all_responses)
+            }
+    
+    return all_results
+
 def get_gemini_response(env_idx, view, history_prompt, prompt_list):
     pass
 #     # Start chat and send message
@@ -361,6 +465,9 @@ def get_gemini_value(current_obs, all_samples_obs, object_ids, step_idx):
                 print('could not get avg list and best idx')
                 pdb.set_trace()
     return outputs
+import torch
+from torch.nn.functional import pairwise_distance
+
 
 class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
@@ -406,6 +513,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             specific_train_exs=[],
             prompt_with_video=True,
             additional_steps=0,
+            LLM_GPU_ID=7,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -538,7 +646,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     for j in range(batch_size):
                         idx = (i + j) % len(f['data'])
                         train_idx = train_start_idx + idx
-                        ep_meta = f[f'data/demo_{train_idx+1}'].attrs.get("ep_meta", None)
+                        ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta", None)
                         text = json.loads(ep_meta)['lang']
                         texts_batch.append(text)
                         batch_indices.append(train_idx)            
@@ -564,9 +672,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 else:
                     train_idx = train_start_idx + (i % len(f['data']))
                 enable_render = True
-                init_state = f[f'data/demo_{train_idx+1}/states'][start_rollout_from_state]
-                env_model = f[f'data/demo_{train_idx+1}'].attrs["model_file"]
-                ep_meta = f[f'data/demo_{train_idx+1}'].attrs.get("ep_meta",None)
+                init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
+                env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
+                ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
+                ep_meta=ep_meta.replace('/proj/vondrick3/sruthi/robots/robocasa/robocasa/models/assets/generative_textures/','')
                 language_goal_embedding = train_embeddings_list[embedding_idx]
                 embedding_idx+=1
 
@@ -611,7 +720,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 for j in range(batch_size):
                     idx = (i + j) % len(f['data'])
                     test_idx = train_start_idx + idx
-                    ep_meta = f[f'data/demo_{test_idx+1}'].attrs.get("ep_meta", None)
+                    ep_meta = f[f'data/demo_{test_idx}'].attrs.get("ep_meta", None)
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
                     batch_indices.append(test_idx)            
@@ -628,9 +737,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 seed = test_start_seed + i
                 enable_render = i < n_test_vis
                 test_idx = train_start_idx + (i % len(f['data']))
-                init_state = f[f'data/demo_{test_idx+1}/states'][start_rollout_from_state]
-                env_model = f[f'data/demo_{test_idx+1}'].attrs["model_file"]
-                ep_meta = json.loads(f[f'data/demo_{test_idx+1}'].attrs.get("ep_meta",None))
+                init_state = f[f'data/demo_{test_idx}/states'][start_rollout_from_state]
+                env_model = f[f'data/demo_{test_idx}'].attrs["model_file"]
+                ep_meta = json.loads(f[f'data/demo_{test_idx}'].attrs.get("ep_meta",None))
                 if change_test_textures:
                     if 'gen_textures' in ep_meta:
                         ep_meta['gen_textures']={}
@@ -660,6 +769,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 #             # print('replacing with new instance',temp_info['cat'] )
 
                 ep_meta = json.dumps(ep_meta)
+                ep_meta=ep_meta.replace('/proj/vondrick3/sruthi/robots/robocasa/robocasa/models/assets/generative_textures/','')
                 language_goal_embedding = test_embeddings_list[embedding_idx]
                 embedding_idx+=1
 
@@ -746,9 +856,39 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.start_rollout_from_state=start_rollout_from_state
         self.start_sampling=start_sampling
         self.end_sampling=end_sampling
-        self.specific_train_exs=specific_train_exs
         self.prompt_with_video=prompt_with_video
         self.additional_steps=additional_steps
+
+        if self.choose_sample:
+            # Find the GPU with the lowest memory utilization
+            LLM_GPU_ID, gpu_utilization = get_gpu_with_lowest_memory_util()
+
+            if LLM_GPU_ID is not None:
+                print(f"GPU with the lowest memory utilization: GPU-{LLM_GPU_ID} with {gpu_utilization * 100:.2f}% usage")
+            else:
+                raise Exception('cannot contain LLM ')
+                print("No GPUs found.")
+            
+            # Initialize LLM once
+            print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+            self.llm = LLM(
+                model=MODEL_PATH,
+                limit_mm_per_prompt={"image": 5, "video": 5},
+                enforce_eager=True,
+                device=f'cuda:{LLM_GPU_ID}',
+                max_num_seqs=10,  # Allow batch processing
+                gpu_memory_utilization=0.9,
+            )
+            self.sampling_params = SamplingParams(
+                n=3,
+                temperature=TEMPRATURE,
+                top_k=50,
+                top_p=0.95,
+                repetition_penalty=1.05,
+                max_tokens=4096,
+            )
+            self.processor = AutoProcessor.from_pretrained(MODEL_PATH)
+
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -829,15 +969,56 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         action_dict = policy.predict_action(reshaped_obs_dict)[0] #action outputs are batch_sizex8x7
                         oversampled_actions = action_dict['action_pred'].view(-1, sample_number, 16, 7).detach().to('cpu').numpy()
 
-                        #choosing based on variance
-                        mean = np.mean(oversampled_actions, axis=(1),keepdims=True)  # Shape: (batch_size, 100)
-                        stds = np.abs(oversampled_actions-mean)
-                        interval = (stds.shape[1] // self.num_samples) - 1
-                        top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
+                        # #choosing based on variance
+                        # mean = np.mean(oversampled_actions, axis=(1),keepdims=True)  # Shape: (batch_size, 100)
+                        # stds = np.abs(oversampled_actions-mean)
+                        # interval = (stds.shape[1] // self.num_samples) - 1
                         # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
-                        batch_indices = np.arange(oversampled_actions.shape[0])[:, None]
-                        actions = oversampled_actions[batch_indices, top_n_indices]
-                        print('var before:', np.sum(np.var(oversampled_actions,axis=1)),'var after:', np.sum(np.var(actions,axis=1)))
+                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
+                        # batch_indices = np.arange(oversampled_actions.shape[0])[:, None]
+                        # actions = oversampled_actions[batch_indices, top_n_indices]
+                        # print('var before:', np.sum(np.var(oversampled_actions,axis=1)),'var after:', np.sum(np.var(actions,axis=1)))
+
+                        B, N, H, W = oversampled_actions.shape  # 50, 25, 16, 7
+                        oversampled_actions=torch.tensor(oversampled_actions)
+                        flat = oversampled_actions.view(B, N, -1)  # (50, 25, 112)
+                        
+                        selected_indices = []
+
+                        for b in range(B):
+                            samples = flat[b]  # (25, 112)
+                            dist_matrix = torch.cdist(samples, samples, p=2)  # (25, 25)
+
+                            # Start with the one that has the largest mean distance to others
+                            avg_dists = dist_matrix.mean(dim=1)
+                            idx = torch.argmax(avg_dists).item()
+                            selected = [idx]
+
+                            # Greedily add k-1 samples that maximize min distance to current set
+                            while len(selected) < self.num_samples:
+                                remaining = list(set(range(N)) - set(selected))
+                                min_dists = []
+                                for r in remaining:
+                                    dists_to_selected = dist_matrix[r, selected]
+                                    min_dists.append((r, dists_to_selected.min().item()))
+                                # Pick the one with the maximum min distance
+                                next_idx = max(min_dists, key=lambda x: x[1])[0]
+                                selected.append(next_idx)
+
+                            selected_indices.append(torch.tensor(selected))
+
+                        selected_indices = torch.stack(selected_indices)  # (50, 5)
+                        # Gather the selected samples
+                        batch_indices = torch.arange(B).unsqueeze(1).expand(-1, self.num_samples)
+                        selected_samples = oversampled_actions[batch_indices, selected_indices]  # (50, 5, 16, 7)
+
+
+                        oversampled_actions=oversampled_actions.numpy()
+                        actions=selected_samples.numpy()
+
+                        # actions=oversample,d_actions
+                        print('action var:', np.sum(np.var(actions,axis=1)))
+
                         add_on = np.tile([0., -0.,  0.,  0., -1.], (actions.shape[0], actions.shape[1], actions.shape[2], 1))
                         extended_env_action = np.concatenate((actions, add_on), axis=-1)
                         current_state = env.call('get_env_state')
@@ -870,29 +1051,39 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                         print('saving videos')
                         os.makedirs(f'{self.output_dir}/videos',exist_ok=True)
-                        videos = [{'robot0_agentview_right_image': [],'robot0_agentview_left_image': [],'robot0_eye_in_hand_image': []} for _ in range(env.num_envs)]
+                        videos = [[] for _ in range(env.num_envs)]
                         for sample_idx, one_of_n_samples in enumerate(sd_sample_obs):
                             for env_idx, one_env in enumerate(one_of_n_samples):
-                                for view in ['robot0_agentview_right_image','robot0_agentview_left_image','robot0_eye_in_hand_image']:
-                                    list_of_images = [img[view] for img in one_env]
-                                    for _,v in step2_sd_sample_obs.items():
-                                        list_of_images+=[img[view] for img in v[sample_idx][env_idx]]
-                                    images_to_video(list_of_images,output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')
-                                    videos[env_idx][view].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')                        
+                                # for view in ['robot0_agentview_right_image']:#,'robot0_agentview_left_image','robot0_eye_in_hand_image']:
+                                list1_of_images = [img['robot0_agentview_right_image'] for img in one_env]
+                                for _,v in step2_sd_sample_obs.items():
+                                    list1_of_images+=[img['robot0_agentview_right_image'] for img in v[sample_idx][env_idx]]
+                                list2_of_images = [img['robot0_agentview_left_image'] for img in one_env]
+                                for _,v in step2_sd_sample_obs.items():
+                                    list2_of_images+=[img['robot0_agentview_left_image'] for img in v[sample_idx][env_idx]]
+                                list3_of_images = [img['robot0_eye_in_hand_image'] for img in one_env]
+                                for _,v in step2_sd_sample_obs.items():
+                                    list3_of_images+=[img['robot0_eye_in_hand_image'] for img in v[sample_idx][env_idx]]
+                                # images_to_video(list_of_images,output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')
+                                images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
+                                videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
                         print('querying COSMOS-REASON1')
-                        best_samples_idx = get_vlm_rank(videos,[x.split('pick the ')[1].split(' from')[0] for x in language_goal], env_step_index)
-                        print('best actions idx:', [v['best_idx'] for k,v in best_samples_idx.items()])
-                        chunk_step_actions[chunk_idx][env_step_index]=[v['best_idx'] for k,v in best_samples_idx.items()]
+                        flattened_videos_list = list(itertools.chain.from_iterable(videos))
+                        batch_results = process_batch(self.llm, flattened_videos_list, self.processor, self.sampling_params)
+                        best_action_indices=[0]*len(videos)
+                        for i, one_video in enumerate(videos):
+                            for j, one_sample in enumerate(one_video):
+                                add_text_to_video_with_ffmpeg(one_sample,batch_results[one_sample]['binary'])
+                                if batch_results[one_sample]['binary']=='towards':
+                                    best_action_indices[i] = j
+                        print('best actions idx:', best_action_indices)
+                        chunk_step_actions[chunk_idx][env_step_index]={'best_action_indices':best_action_indices, 'raw_results': batch_results}
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
-                        actions=actions[np.arange(actions.shape[0]), [v['best_idx'] for k,v in best_samples_idx.items()], :8, :]
-                        action_dict={'action':torch.tensor(actions).to(device)}
-
-                        actions=actions[:, 0, :8, :]
+                        actions=actions[np.arange(actions.shape[0]), best_action_indices, :8, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
                     else:
                         print(f'step: {env_step_index}')
                         action_dict, classifier_action_pred = policy.predict_action(obs_dict)
-                        # pdb.set_trace()
                         """
                         reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(100, dim=0)) 
                         temp=policy.predict_action(reshaped_obs_dict)[0]['action']

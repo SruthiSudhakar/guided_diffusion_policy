@@ -17,3 +17,9 @@ pip install --force-reinstall --no-cache-dir numpy==1.23.3
 # pip uninstall numpy
 # pip uninstall numpy
 # pip install --force-reinstall --no-cache-dir numpy==1.23.3
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+nvm install node
+npm install -g @anthropic-ai/claude-code
+claude
+export TOKENIZERS_PARALLELISM=false
