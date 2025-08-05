@@ -14,6 +14,8 @@ cd ../gym
 pip install -e .
 pip uninstall numpy -y
 pip install --force-reinstall --no-cache-dir numpy==1.23.3
+pip install lovely_tensors
+
 # pip uninstall numpy
 # pip uninstall numpy
 # pip install --force-reinstall --no-cache-dir numpy==1.23.3
@@ -23,3 +25,4 @@ nvm install node
 npm install -g @anthropic-ai/claude-code
 claude
 export TOKENIZERS_PARALLELISM=false
+pip install scikit-learn

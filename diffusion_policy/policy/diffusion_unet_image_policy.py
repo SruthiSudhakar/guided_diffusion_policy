@@ -340,7 +340,8 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         
         result = {
             'action': action,
-            'action_pred': action_pred
+            'action_pred': action_pred,
+            'global_cond': global_cond
         }
         return result, classifier_pred
 

@@ -1,0 +1,25 @@
+defaults:
+  - _self_
+
+task_name: PnPSinkToCounter
+name: train_diffusion_unet_resnet
+_target_: diffusion_policy.workspace.train_faildetect_workspace.FailDetectWorkspace
+
+
+# experiment_name: train_diffusion_unet_clip
+experiment_tag: ST_OOD_DAgger
+
+
+FD_task_name: PnPSinkToCounter
+FD_base_policy_ckpt_path: data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt
+FD_save_obs_embeds_path: data/checkpoints/dp_model/human_obs/obs_embeds.pt
+FD_save_score_network_path: data/checkpoints/dp_model/human_obs/fd_score_network.ckpt
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${experiment_tag}_${name}_${FD_task_name}/score_network
+  sweep:
+    dir: data/outputs/${experiment_tag}_${name}_${FD_task_name}/score_network
+    subdir: ${hydra.job.num}
