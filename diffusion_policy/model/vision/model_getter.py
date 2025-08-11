@@ -29,3 +29,39 @@ def get_r3m(name, **kwargs):
     resnet_model = r3m_model.convnet
     resnet_model = resnet_model.to('cpu')
     return resnet_model
+
+def get_clip(name="ViT-B/32", **kwargs):
+    """
+    Get CLIP visual encoder
+    name: CLIP model name like "ViT-B/32", "ViT-B/16", "ViT-L/14", "RN50", etc.
+    """
+    import clip
+    print(colored(f'Loading CLIP model: {name}', 'magenta'))
+    
+    # Load CLIP model
+    model, preprocess = clip.load(name, device='cpu')
+    
+    # Extract just the visual encoder
+    visual_encoder = model.visual
+    
+    # Make it compatible with the rest of the codebase
+    # CLIP's visual encoder outputs a different shape, so we need to handle that
+    class CLIPVisualWrapper(torch.nn.Module):
+        def __init__(self, visual_encoder):
+            super().__init__()
+            self.visual = visual_encoder
+            # Get the output dimension
+            if hasattr(visual_encoder, 'output_dim'):
+                self.out_features = visual_encoder.output_dim
+            else:
+                # For ViT models
+                if hasattr(visual_encoder, 'ln_post'):
+                    self.out_features = visual_encoder.ln_post.normalized_shape[0]
+                # For ResNet models  
+                else:
+                    self.out_features = visual_encoder.attnpool.c_proj.out_features
+                    
+        def forward(self, x):
+            return self.visual(x)
+    
+    return CLIPVisualWrapper(visual_encoder)

@@ -7,7 +7,7 @@ _target_: diffusion_policy.workspace.train_faildetect_workspace.FailDetectWorksp
 
 
 # experiment_name: train_diffusion_unet_clip
-experiment_tag: ST_OOD_DAgger
+experiment_tag: train_score_network
 
 
 FD_task_name: PnPSinkToCounter

@@ -12,6 +12,7 @@ import cv2
 import itertools
 import pdb
 import json
+import pickle
 import wandb.sdk.data_types.video as wv
 from diffusion_policy.gym_util.async_vector_env import AsyncVectorEnv
 from diffusion_policy.gym_util.sync_vector_env import SyncVectorEnv
@@ -102,6 +103,18 @@ def plot_and_save_images(obs, output_dir, timestep = 0, start=0):
             img.save(os.path.join(save_dir, f'{key}_t={timestep}.png'))
 
 
+def add_red_border(frame, thickness=10):
+    """Add red border to a frame to indicate failure detection"""
+    # frame is expected to be numpy array of shape (H, W, 3) with values 0-255
+    h, w = frame.shape[:2]
+    # Draw red border
+    frame[:thickness, :] = [255, 0, 0]  # Top
+    frame[-thickness:, :] = [255, 0, 0]  # Bottom
+    frame[:, :thickness] = [255, 0, 0]  # Left
+    frame[:, -thickness:] = [255, 0, 0]  # Right
+    return frame
+
+
 from transformers import CLIPTokenizer, CLIPModel
 import torch
 # Load the CLIP model and tokenizer
@@ -113,15 +126,17 @@ import torch
 from torch.nn.functional import pairwise_distance
 
 
-class FailDetectRunnerEval(BaseImageRunner):
+class CPBandFailDetectRunnerEval(BaseImageRunner):
     """
     Robomimic envs already enforces number of steps.
+    Enhanced with CP band failure detection that adds red borders to videos.
     """
 
     def __init__(self, 
             output_dir,
             dataset_path,
             shape_meta:dict,
+            cp_band_path,  # Path to CP band pickle file
             n_train=0,
             n_train_vis=0,
             train_start_idx=0,
@@ -158,12 +173,24 @@ class FailDetectRunnerEval(BaseImageRunner):
             prompt_with_video=True,
             additional_steps=0,
             save_score_network_path='',
+            red_border_thickness=10,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
         self.object = object
         if n_envs is None:
             n_envs = n_train + n_test
+
+        # Load CP band
+        with open(cp_band_path, 'rb') as f:
+            self.cp_band = pickle.load(f)
+        print(f"Loaded CP band from {cp_band_path}")
+        
+        if hasattr(red_border_thickness, '__getitem__') and not isinstance(red_border_thickness, (str, bytes)):
+            red_border_thickness = red_border_thickness[0]
+        red_border_thickness = int(red_border_thickness)
+
+        self.red_border_thickness = red_border_thickness
 
         # assert n_obs_steps <= n_action_steps
         dataset_path = os.path.expanduser(dataset_path)
@@ -183,6 +210,18 @@ class FailDetectRunnerEval(BaseImageRunner):
             env_meta['env_kwargs']['controller_configs']['control_delta'] = False
             rotation_transformer = RotationTransformer('axis_angle', 'rotation_6d')
 
+        # Create custom video recorder that can add red borders
+        class RedBorderVideoRecorder(VideoRecorder):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.add_red_border = False
+                self.red_border_thickness = red_border_thickness
+                
+            def write_frame(self, frame):
+                if self.add_red_border and self.add_red_border==True and frame is not None:
+                    frame = add_red_border(frame, self.red_border_thickness)
+                super().write_frame(frame)
+
         def env_fn():
             robomimic_env = create_env(
                 env_meta=env_meta, 
@@ -193,27 +232,30 @@ class FailDetectRunnerEval(BaseImageRunner):
             # Disabled to run more envs.
             # https://github.com/ARISE-Initiative/robosuite/blob/92abf5595eddb3a845cd1093703e5a3ccd01e77e/robosuite/environments/base.py#L247-L248
             robomimic_env.env.hard_reset = False
-            return MultiStepWrapper(
-                VideoRecordingWrapper(
-                    RobomimicImageWrapper(
-                        env=robomimic_env,
-                        shape_meta=shape_meta,
-                        init_state=None,
-                        env_model=None,
-                        ep_meta=None,
-                        render_obs_key=render_obs_key
-                    ),
-                    video_recoder=VideoRecorder.create_h264(
-                        fps=fps,
-                        codec='h264',
-                        input_pix_fmt='rgb24',
-                        crf=crf,
-                        thread_type='FRAME',
-                        thread_count=1
-                    ),
-                    file_path=None,
-                    steps_per_render=steps_per_render
+            video_recorder = RedBorderVideoRecorder.create_h264(
+                fps=fps,
+                codec='h264',
+                input_pix_fmt='rgb24',
+                crf=crf,
+                thread_type='FRAME',
+                thread_count=1
+            )
+            video_wrapper = VideoRecordingWrapper(
+                RobomimicImageWrapper(
+                    env=robomimic_env,
+                    shape_meta=shape_meta,
+                    init_state=None,
+                    env_model=None,
+                    ep_meta=None,
+                    render_obs_key=render_obs_key
                 ),
+                video_recoder=video_recorder,
+                file_path=None,
+                steps_per_render=steps_per_render
+            )
+            video_wrapper.video_recoder.red_border_thickness = red_border_thickness
+            return MultiStepWrapper(
+                video_wrapper,
                 n_obs_steps=n_obs_steps,
                 n_action_steps=n_action_steps,
                 max_episode_steps=max_steps
@@ -230,27 +272,30 @@ class FailDetectRunnerEval(BaseImageRunner):
                     object=self.object,
                     enable_render=False
                 )
-            return MultiStepWrapper(
-                VideoRecordingWrapper(
-                    RobomimicImageWrapper(
-                        env=robomimic_env,
-                        shape_meta=shape_meta,
-                        init_state=None,
-                        env_model=None,
-                        ep_meta=None,
-                        render_obs_key=render_obs_key
-                    ),
-                    video_recoder=VideoRecorder.create_h264(
-                        fps=fps,
-                        codec='h264',
-                        input_pix_fmt='rgb24',
-                        crf=crf,
-                        thread_type='FRAME',
-                        thread_count=1
-                    ),
-                    file_path=None,
-                    steps_per_render=steps_per_render
+            video_recorder = RedBorderVideoRecorder.create_h264(
+                fps=fps,
+                codec='h264',
+                input_pix_fmt='rgb24',
+                crf=crf,
+                thread_type='FRAME',
+                thread_count=1
+            )
+            video_wrapper = VideoRecordingWrapper(
+                RobomimicImageWrapper(
+                    env=robomimic_env,
+                    shape_meta=shape_meta,
+                    init_state=None,
+                    env_model=None,
+                    ep_meta=None,
+                    render_obs_key=render_obs_key
                 ),
+                video_recoder=video_recorder,
+                file_path=None,
+                steps_per_render=steps_per_render
+            )
+            video_wrapper.video_recoder.red_border_thickness = red_border_thickness
+            return MultiStepWrapper(
+                video_wrapper,
                 n_obs_steps=n_obs_steps,
                 n_action_steps=n_action_steps,
                 max_episode_steps=max_steps
@@ -489,7 +534,7 @@ class FailDetectRunnerEval(BaseImageRunner):
         # move net to device
         self.score_network = net
 
-    def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None, modify=False):
+    def run(self, policy: BaseImagePolicy):
         device = policy.device
         self.score_network.to(device)
         dtype = policy.dtype
@@ -508,6 +553,8 @@ class FailDetectRunnerEval(BaseImageRunner):
         all_eyeinhand_image_obs = [None] * n_inits # Stores logpZO for all rollout across all steps
         all_leftside_image_obs = [None] * n_inits # Stores logpZO for all rollout across all steps
         all_rightside_image_obs = [None] * n_inits # Stores logpZO for all rollout across all steps
+        all_failure_detected = [None] * n_inits # Stores whether failure was detected
+        all_failure_timesteps = [None] * n_inits # Stores timestep when failure was detected
 
         for chunk_idx in range(n_chunks):
             start = chunk_idx * n_envs
@@ -543,10 +590,14 @@ class FailDetectRunnerEval(BaseImageRunner):
             eyeinhand_local_slice = []
             rightside_local_slice = []
             leftside_local_slice = []
-            modify_again = True if modify else False
-            if modify or modify_again:
-                assert True==False
+
+            # Track failure detection for each env
+            failure_detected = [[] for _ in range(this_n_active_envs)]
+            failure_timesteps = [[] for _ in range(this_n_active_envs)]
+            timestep = -1
+            
             while not done:
+                timestep+=1
                 # create obs dict
                 np_obs_dict = dict(obs)
                 if self.past_action and (past_action is not None):
@@ -564,6 +615,64 @@ class FailDetectRunnerEval(BaseImageRunner):
                 # compute FD metrics
                 baseline_metric = logpZO_UQ(self.score_network, action_dict['global_cond'])
                 logpZO_local_slices.append(baseline_metric)
+                
+                # Check against CP band for failure detection
+                for env_idx in range(this_n_active_envs):
+                    # Get the score for this environment at this timestep
+                    score = baseline_metric[env_idx].item()
+                        
+                    # Check if score exceeds CP band threshold at current timestep
+                    # CP band is indexed by timestep in the trajectory
+                    if timestep < len(self.cp_band):
+                        cp_threshold = self.cp_band[timestep]
+                        if score > cp_threshold:
+                            failure_detected[env_idx].append(True)
+                            failure_timesteps[env_idx].append(timestep)
+                            print(f"Failure detected for env {env_idx} at timestep {timestep}: score {score:.4f} > threshold {cp_threshold:.4f}")
+                        else:
+                            failure_detected[env_idx].append(False)
+                            failure_timesteps[env_idx].append(-1)
+
+                # Set red border for environments with detected failures
+                # Determine which environments need red borders
+                should_set_borders = []
+                for env_idx in range(this_n_active_envs):
+                    if failure_detected[env_idx] and failure_detected[env_idx][-1]:
+                        should_set_borders.append(True)
+                    else:
+                        should_set_borders.append(False)
+                
+                # Apply the red border settings
+                if any(should_set_borders):
+                    try:
+                        if hasattr(env, 'call_each'):
+                            # For AsyncVectorEnv
+                            # Create individual functions for each environment
+                            funcs_to_run = []
+                            def set_no_border(env):
+                                env.env.video_recoder.add_red_border = False
+                            def set_red_border(env):
+                                env.env.video_recoder.add_red_border = True
+                            for should_set in should_set_borders:
+                                if should_set:
+                                    funcs_to_run.append(dill.dumps(set_red_border))
+                                else:
+                                    funcs_to_run.append(dill.dumps(set_no_border))
+                            if n_diff > 0:
+                                funcs_to_run.extend([dill.dumps(set_no_border)]*n_diff)
+                            assert len(funcs_to_run) == n_envs
+
+                            env.call_each('run_dill_function', 
+                                args_list=[(func,) for func in funcs_to_run])
+                        elif hasattr(env, 'envs'):
+                            # For SyncVectorEnv
+                            for env_idx in range(this_n_active_envs):
+                                if should_set_borders[env_idx] and hasattr(env.envs[env_idx].env, 'video_recoder'):
+                                    env.envs[env_idx].env.video_recoder.add_red_border = True
+                                elif should_set_borders[env_idx]==False and hasattr(env.envs[env_idx].env, 'video_recoder'):
+                                    env.envs[env_idx].env.video_recoder.add_red_border = False
+                    except Exception as e:
+                        print(f"Warning: Could not set red border: {e}")
 
                 #store imgobs_local_slices
                 eyeinhand_local_slice.append(obs_dict['robot0_eye_in_hand_image'].detach().cpu())
@@ -602,6 +711,8 @@ class FailDetectRunnerEval(BaseImageRunner):
             # collect data for this round
             all_video_paths[this_global_slice] = env.render()[this_local_slice]
             all_rewards[this_global_slice] = env.call('get_attr', 'reward')[this_local_slice]
+            all_failure_detected[this_global_slice] = failure_detected
+            all_failure_timesteps[this_global_slice] = failure_timesteps
             
             logpZO_local_slices = torch.stack(logpZO_local_slices, dim=1) # (n_envs, max_steps // T_p)
             all_logpZO[this_global_slice] = logpZO_local_slices
@@ -620,6 +731,8 @@ class FailDetectRunnerEval(BaseImageRunner):
         # log
         max_rewards = collections.defaultdict(list)
         log_data = dict()
+        failure_detection_stats = {'num_failure_timesteps_detected' : 0, 'num_total_timetseps' : 0, 'total': 0, 'detected': 0}
+        
         # results reported in the paper are generated using the commented out line below
         # which will only report and average metrics from first n_envs initial condition and seeds
         # fortunately this won't invalidate our conclusion since
@@ -640,6 +753,13 @@ class FailDetectRunnerEval(BaseImageRunner):
                                                          # Baseline
                                                          '/'.join(map(str, helper(all_logpZO, i))),
                                                          ]
+            # Add failure detection info to log
+            log_data[prefix+f'failure_detected_{seed}'] = all_failure_timesteps[i]
+            failure_detection_stats['num_failure_timesteps_detected'] += sum(all_failure_detected[i])
+            failure_detection_stats['num_total_timetseps'] += len(all_failure_detected[i])
+            failure_detection_stats['detected'] += any(all_failure_timesteps[i])
+            failure_detection_stats['total']  += 1
+            
             video_path = all_video_paths[i]
             if video_path is not None:
                 sim_video = wandb.Video(video_path)
@@ -649,12 +769,28 @@ class FailDetectRunnerEval(BaseImageRunner):
             name = prefix+'mean_score'
             value = np.mean(value)
             log_data[name] = value
-        pdb.set_trace()
+        
+        # Log failure detection statistics
+        if failure_detection_stats['total'] > 0:
+            failure_rate = failure_detection_stats['detected'] / failure_detection_stats['total']
+            log_data['failure_detection_rate'] = failure_rate
+            print(f"Failure detection rate: {failure_detection_stats['detected']}/{failure_detection_stats['total']} = {failure_rate:.2%}")
+            failure_individual_rate = failure_detection_stats['num_failure_timesteps_detected'] / failure_detection_stats['num_total_timetseps']
+            log_data['pertimestep_failure_raised_rate'] = failure_individual_rate
+
+
+        log_data['num_failure_timesteps_detected'] = failure_detection_stats['num_failure_timesteps_detected']
+        log_data['num_total_timetseps'] = failure_detection_stats['num_total_timetseps'] 
+        log_data['detected'] = failure_detection_stats['detected']
+        log_data['total'] = failure_detection_stats['total'] 
+
         allimageobs = {
             'eyeinhand': all_eyeinhand_image_obs,
             'leftside': all_leftside_image_obs,
             'rightside': all_rightside_image_obs,
-            'logdata': log_data
+            'logdata': log_data,
+            'failure_detected': all_failure_detected,
+            'failure_timesteps': all_failure_timesteps
         }
         return log_data, allimageobs
 

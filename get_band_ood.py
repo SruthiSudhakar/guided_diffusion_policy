@@ -503,6 +503,11 @@ def main():
     print("TEST successes shape:", successes_test.shape)
 
     get_detection_with_plot(log_probs, successes, log_probs_test, successes_test, all_images, dataset_path[:-4], alpha=0.1)
+    deets = {
+        'train_set': dataset_path,
+        'test_set': dataset_test_path,
+    }
+    json.dump(deets, open(dataset_path[:-4]+'/deets.json','w'))
 
 if __name__ == "__main__":
     main()

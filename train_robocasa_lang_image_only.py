@@ -40,3 +40,5 @@ accelerate launch --multi-gpu --num_machines 1 --num_processes=8 --gpu_ids=0,1,2
     task.env_runner.dataset_path=/proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/demo_gentex_im128_randcams_new_images_train.hdf5 
 
 """
+
+CUDA_VISIBLE_DEVICES=1 HYDRA_FULL_ERROR=1 python train.py --config-dir=. --config-name=train_robocasa_base_dp_clip_policy.yaml training.seed=42 task.name=‘CloseDrawer’

@@ -26,3 +26,6 @@ npm install -g @anthropic-ai/claude-code
 claude
 export TOKENIZERS_PARALLELISM=false
 pip install scikit-learn
+pip install timm
+pip install open-clip-torch==2.24.0
+

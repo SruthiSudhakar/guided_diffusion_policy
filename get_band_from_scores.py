@@ -149,16 +149,13 @@ def get_metric(y_true, y_pred):
 
 
 
-def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha=0.01, lb=False, CPband=True, suffix=''):
+def get_detection_with_plot(log_probs, successes, img_frames, save_folder, confidence_val=0.01, lb=False, CPband=True, suffix=''):
     
 
     """Detect anomalies using prediction bands and create visualization plots.
     Returns:
         Tuple containing (first_idx_ls, positive_ls, successes_test, amount_exceed_ratio)
     """
-    pdb.set_trace()
-    # Sort by the success value (0.0 or 1.0)
-    successes, log_probs = map(list, zip(*sorted(zip(successes, log_probs), key=lambda x: x[0], reverse=True)))
 
     num_te = len(successes)//5 # these are heldout for testing and evaluating failure detection
     max_tr = len(successes)-num_te # these are used in CP construction
@@ -182,24 +179,26 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     # count zeros in successes_test
     num_failures_in_test = np.sum(np.array(successes_test) == 0)
     print(f'#### Number of failures in test set: {num_failures_in_test}')
+    print(f'#### Number of failures in training set: {np.sum(np.array(successes_train) == 0)}')
 
 
     log_probs_train = np.array([log_probs_train[i] for i, success in enumerate(successes_train) if success])
     ntr = int(len(log_probs_train) * num_train / (num_train + num_cal))
     ncal = len(log_probs_train) - ntr
 
-    print(f'#### Use {ntr} trajectories for training and {ncal} for calibration')
     print(f'#### Number of training trajectories: {len(log_probs_train)}')
     print("#### Number of test trajectories: ", len(log_probs_test))
-    print(f'#### Use {len(log_probs_train)} successful trajectories for calibration')
+    assert len(log_probs_test) + np.sum(np.array(successes_train)==0) + len(log_probs_train) == len(successes)
+    print(f'#### Use {len(log_probs_train)} successful trajectories for calibration: {ntr} for training and {ncal} for calibration')
     # predictor = FunctionalPredictor(modulation_type=ModulationType.Const, regression_type=RegressionType.ConstantMean)
     predictor = FunctionalPredictor(modulation_type=ModulationType.Tfunc, regression_type=RegressionType.Mean)
+    pdb.set_trace()
     if CPband:
         print(f'Number of success for mean {ntr} and for band {ncal}')
-        target_traj = predictor.get_one_sided_prediction_band(log_probs_train[:ntr], log_probs_train[-ncal:], alpha=alpha, lower_bound=lb).flatten()
+        target_traj = predictor.get_one_sided_prediction_band(log_probs_train[:ntr], log_probs_train[-ncal:], alpha=confidence_val, lower_bound=lb).flatten()
     else:
         metric_tr = [np.cumsum(val)[-1] for val in log_probs_train]
-        threshold = np.quantile(metric_tr, 1 - alpha)
+        threshold = np.quantile(metric_tr, 1 - confidence_val)
         # Repeat for each trajectory
         target_traj = np.repeat(threshold, len(log_probs_train[0]))
 
@@ -232,7 +231,7 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     multiplier = 16
     xaxis = np.arange(len(log_probs_test_plt[0])) * multiplier
     ax.fill_between(xaxis, upper, lower, color='blue', alpha=0.25)
-    single_cp_value = target_traj[0]
+    single_cp_value = np.mean(target_traj)#[0]
 
     log_probs_train_plot = log_probs[:max_tr]
     log_probs_train_plot = log_probs_train[:ntr]
@@ -315,10 +314,10 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
         log_prob_test_scores = log_probs_test_plt[test_idx]
         success = successes_test_plt[test_idx]
 
-        if np.mean(log_prob_test_scores) > 10000:
-            print("high value", global_indices_of_test[test_idx])
-        else:
-            print("low value", global_indices_of_test[test_idx])
+        # if np.mean(log_prob_test_scores) > 10000:
+        #     print("high value", global_indices_of_test[test_idx])
+        # else:
+        #     print("low value", global_indices_of_test[test_idx])
         # observation_frames = img_frames[global_indices_of_test[test_idx]]
         
         CP_upper_band = target_traj
@@ -328,7 +327,6 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
                 #     img= observation_frames[t]
                 # else:
                 #     img = observation_frames[-1]
-                # pdb.set_trace()
                 
                 if success == 0: # if failed, then correct detection
                     num_TP += 1
@@ -366,8 +364,17 @@ def get_detection_with_plot(log_probs, successes, img_frames, save_folder, alpha
     print(f'### True Negative Rate (TNR): {TNR}')
     print(f'### Accuracy: {accuracy}')
     print(f'### Weighted Accuracy: {accuracy_weighted}')
+    precision=None
+    if num_FP + num_TP <= 0 :
+        print('sus. FP+TP=0')
+        print('sus. FP+TP=0 do not trust precision!')
+        print('sus. FP+TP=0')
+    else:
+        precision = num_TP / (num_TP + num_FP) if num_TP + num_FP > 0 else 0
+        print(f'### Precision (TP/(TP+FP)): {precision}')
+
     print('saved to', save_folder)
-    return        
+    return num_TP, num_TN, num_FP, num_FN, TPR, TNR, precision, accuracy, accuracy_weighted    
 
 
 def plot_all_scores_individual(log_probs, successes):
@@ -455,7 +462,7 @@ def main():
     experiments = pickle.load(open(dataset_path, 'rb'))
     
     for idx, demo_key in tqdm(enumerate(list(experiments['logdata'].keys()))):
-        if 'train/sim_max_reward' in demo_key.lower():
+        if 'train/sim_max_reward' in demo_key.lower() or 'test/sim_max_reward' in demo_key.lower():
             logpzo_scores = experiments['logdata'][demo_key][1]
             scores = [float(x) for x in logpzo_scores.split('/')]
             success = experiments['logdata'][demo_key][0]
@@ -500,8 +507,22 @@ def main():
 
     print("log_probs shape:", log_probs.shape)
     print("successes shape:", successes.shape)
-
-    get_detection_with_plot(log_probs, successes, all_images, dataset_path[:-4], alpha=0.1)
-
+    confidence_val = 0.05
+    num_TP, num_TN, num_FP, num_FN, TPR, TNR, precision, accuracy, accuracy_weighted = get_detection_with_plot(log_probs, successes, all_images, dataset_path[:-4], confidence_val=confidence_val)
+    deets = {
+        'confidence_val': confidence_val,
+        'train_set': dataset_path,
+        'test_set': dataset_path,
+        'num_TP': num_TP, 
+        'num_TN': num_TN, 
+        'num_FP': num_FP, 
+        'num_FN': num_FN, 
+        'TPR': TPR, 
+        'TNR': TNR, 
+        'precision': precision, 
+        'accuracy': accuracy, 
+        'accuracy_weighted': accuracy_weighted    
+    }
+    json.dump(deets, open(dataset_path[:-4]+'/deets.json','w'))
 if __name__ == "__main__":
     main()

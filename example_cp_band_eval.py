@@ -1,3 +1,24 @@
+#!/usr/bin/env python3
+"""
+Example script demonstrating how to use the CP Band Failure Detection Runner
+for evaluating a diffusion policy with real-time failure detection.
+
+When a failure is detected (score exceeds CP band threshold), the video will
+show a red border to indicate the failure.
+"""
+
+import os
+import torch
+import hydra
+from omegaconf import DictConfig, OmegaConf
+from diffusion_policy.env_runner.cp_band_fail_detect_env_runner import CPBandFailDetectRunnerEval
+from diffusion_policy.workspace.base_workspace import BaseWorkspace
+
+
+
+
+
+
 """
 source /proj/vondrick3/sruthi/miniconda3/bin/activate
 conda activate clonejgdrobodiff
@@ -5,48 +26,35 @@ cd /proj/vondrick3/sruthi/robots/diffusion_policy
 export LD_LIBRARY_PATH=:/home/sruthi/.mujoco/mujoco210/bin:/usr/lib/nvidia
 export MUJOCO_GL=osmesa 
 export HYDRA_FULL_ERROR=1
-
-Usage:
-python score_rollouts.py \
+usage:
+python example_cp_band_eval.py \
     --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
-    --device cuda:2 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_Human_fixed_textures \
-    --n_envs 200 \
-    --n_train 1 \
-    --n_test 199 \
-    --prefix_dir score_rollouts/human
-
-python score_rollouts.py \
-    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
+    --cp_band_path data/checkpoints/dp_model/epoch=1100-val_loss=0.037/score_rollouts/mg_val_kbpckt_firsthalf/PnPSinkToCounter_mg_val_kbpckt_firsthalf_87172126_/fd_scores/CP_band.pkl \
     --device cuda:6 \
     --robocasa \
     --change_test_textures \
     --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 200 \
-    --n_train 199 \
-    --n_test 1 \
-    --prefix_dir score_rollouts/mg_val_kbpckt_firsthalf
+    --n_envs 50 \
+    --n_train 1 \
+    --n_test 49 \
+    --prefix_dir detect_failures_state0/PnPSinkToCounter_mg_val_kbpckt_firsthalf
 
-    
-python score_rollouts.py \
+python example_cp_band_eval.py \
     --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
+    --cp_band_path data/checkpoints/dp_model/epoch=1100-val_loss=0.037/score_rollouts_140/human/PnPSinkToCounter_Human_fixed_textures_862300_/fd_scores/CP_band.pkl \
     --device cuda:7 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 2 \
+    --list_dataset_path PnPSinkToCounter_Human_fixed_textures \
+    --n_envs 50 \
     --n_train 1 \
-    --n_test 1 \
+    --n_test 49 \
     --start_rollout_from_state 140 \
-    --max_steps 16 \
-    --prefix_dir test
+    --max_steps 200 \
+    --prefix_dir detect_failures/PnPSinkToCounter_Human_fixed_textures
 
---specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
 
 """
 import sys
@@ -113,8 +121,9 @@ import pickle
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-save_score_network_path', '--save_score_network_path', required=True)
+@click.option('-cp_band_path', '--cp_band_path', required=True)
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, save_score_network_path):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, save_score_network_path, cp_band_path):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -178,7 +187,8 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 'change_test_textures', change_test_textures, 'change_test_object_instances', \
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
-                'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs',specific_train_exs, 'prompt_with_video',prompt_with_video]
+                'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs',specific_train_exs, 'prompt_with_video',prompt_with_video,
+                'cp_band_path', cp_band_path, 'save_score_network_path', save_score_network_path]
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -186,7 +196,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
         cfg = payload['cfg']
 
-        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.fail_detect_env_runner.FailDetectRunnerEval'
+        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.cp_band_fail_detect_env_runner.CPBandFailDetectRunnerEval'
         cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
         with open_dict(cfg):
             cfg['task']['env_runner']['object'] = object
@@ -212,16 +222,19 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
             cfg['task']['env_runner']['save_score_network_path']=save_score_network_path
+            cfg['task']['env_runner']['cp_band_path']=cp_band_path
+            cfg['task']['env_runner']['red_border_thickness']=15,  # Thickness of red border when failure detected
 
-        cfg['task']['dataset_path'] = dataset_path
-        cfg['task']['env_runner']['dataset_path'] = dataset_path
-        cfg['task']['dataset']['dataset_path'] = dataset_path
-        cfg['task']['env_runner']['max_steps'] = max_steps
-        cfg['task']['env_runner']['n_train'] = int(n_train)
-        cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-        cfg['task']['env_runner']['n_test'] = int(n_test)
-        cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-        cfg['task']['env_runner']['n_envs'] = int(n_envs)
+            cfg['task']['dataset_path'] = dataset_path
+            cfg['task']['env_runner']['dataset_path'] = dataset_path
+            cfg['task']['dataset']['dataset_path'] = dataset_path
+            cfg['task']['env_runner']['max_steps'] = max_steps
+            cfg['task']['env_runner']['n_train'] = int(n_train)
+            cfg['task']['env_runner']['n_train_vis'] = int(n_train)
+            cfg['task']['env_runner']['n_test'] = int(n_test)
+            cfg['task']['env_runner']['n_test_vis'] = int(n_test)
+            cfg['task']['env_runner']['n_envs'] = int(n_envs)
+
         if test_start_seed:
             cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
 
@@ -252,15 +265,29 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 json_log[key] = str(value)
         out_path = os.path.join(output_dir, 'computed_rollout_scores.json')
         json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
+
+        pdb.set_trace()
+        # Print results
+        print("\nEvaluation Results:")
+        print(f"Train mean score: {runner_log.get('train/mean_score', 'N/A')}")
+        print(f"Test mean score: {runner_log.get('test/mean_score', 'N/A')}")
+        print(f"Failure detection rate: {runner_log.get('failure_detection_rate', 'N/A')} = {runner_log['detected']} / {runner_log['total']} ")
+        print(f"pertimestep_failure_raised_rate: {runner_log.get('pertimestep_failure_raised_rate', 'N/A')} = {runner_log['num_failure_timesteps_detected']} / {runner_log['num_total_timetseps']} ")
         
-        with open(f"{output_dir}/fd_scores.pkl", "wb") as f:
-            pickle.dump({'logdata':image_obs['logdata']}, f)
-        # with open(f"{output_dir}/fd_scores_with_images.pkl", "wb") as f:
-        #     pickle.dump(image_obs, f)
+        # # Check which rollouts had failures detected
+        # failure_count = 0
+        # for key, value in runner_log.items():
+        #     if 'failure_detected_' in key and value:
+        #         failure_count += 1
+        #         timestep_key = key.replace('failure_detected_', 'failure_timestep_')
+        #         timestep = runner_log.get(timestep_key, 'unknown')
+        #         print(f"  - {key}: Failure detected at timestep {timestep}")
+        
+        # print(f"Videos saved to: {output_dir}")
+        # print("\nVideos with detected failures will have red borders.")
+
         out_path = os.path.join(output_dir, 'jgddone.json')
         json.dump({'done':'JGD done'}, open(out_path, 'w'), indent=2, sort_keys=True)
         print('done. output_dir:', output_dir)
-
-
 if __name__ == '__main__':
     main()

@@ -1,0 +1,308 @@
+_target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
+checkpoint:
+  save_last_ckpt: true
+  save_last_snapshot: false
+  topk:
+    format_str: epoch={epoch:04d}-val_loss={val_loss:.3f}.ckpt
+    k: 50
+    mode: min
+    monitor_key: val_loss
+dataloader:
+  batch_size: 64
+  num_workers: 8
+  shuffle: True
+  pin_memory: True
+  persistent_workers: False
+dataset_obs_steps: 2
+ema:
+  _target_: diffusion_policy.model.diffusion.ema_model.EMAModel
+  inv_gamma: 1.0
+  max_value: 0.9999
+  min_value: 0.0
+  power: 0.75
+  update_after_step: 0
+exp_name: default
+horizon: 16
+keypoint_visible_rate: 1.0
+logging:
+  group: null
+  id: null
+  mode: online
+  name: train_diffusion_unet_image_clip
+  project: diffusion_policy_debug
+  resume: false
+  tags:
+  - train_diffusion_unet_image
+  - square_image
+  - clip
+  - default
+multi_run:
+  run_dir: data/outputs/2025.01/train_diffusion_unet_image_clip
+  wandb_name_base: train_diffusion_unet_image_clip
+n_action_steps: 8
+n_latency_steps: 0
+n_obs_steps: 2
+name: train_diffusion_unet_image_clip
+obs_as_global_cond: true
+optimizer:
+  _target_: torch.optim.AdamW
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  lr: 0.0001
+  weight_decay: 1.0e-6
+past_action_visible: false
+policy:
+  _target_: diffusion_policy.policy.diffusion_unet_image_policy.DiffusionUnetImagePolicy
+  cond_predict_scale: true
+  diffusion_step_embed_dim: 128
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+  horizon: 16
+  kernel_size: 5
+  n_action_steps: 8
+  n_groups: 8
+  n_obs_steps: 2
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    beta_start: 0.0001
+    clip_sample: true
+    num_train_timesteps: 100
+    prediction_type: epsilon
+    variance_type: fixed_small
+  num_inference_steps: 100
+  obs_as_global_cond: true
+  obs_encoder:
+    _target_: diffusion_policy.model.vision.multi_image_obs_encoder.MultiImageObsEncoder
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb    
+    rgb_model:
+      _target_: diffusion_policy.model.vision.model_getter.get_clip
+      name: ViT-B/32  # You can change this to ViT-B/16, ViT-L/14, RN50, etc.
+    resize_shape: [224, 224]  # CLIP typically uses 224x224 images
+    crop_shape: [224, 224]    # No cropping for CLIP
+    random_crop: False        # CLIP works best without random crops during training
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True       # CLIP uses ImageNet normalization
+  shape_meta:
+    action:
+      shape:
+      - 7
+    obs:
+      language_goal:
+        shape:
+        - 512
+      robot0_eye_in_hand_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_right_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_left_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+shape_meta:
+  action:
+    shape:
+    - 7
+  obs:
+    language_goal:
+      shape:
+      - 512
+    robot0_eye_in_hand_image:
+      shape:
+      - 3
+      - 128
+      - 128
+      type: rgb
+    robot0_agentview_right_image:
+      shape:
+      - 3
+      - 128
+      - 128
+      type: rgb
+    robot0_agentview_left_image:
+      shape:
+      - 3
+      - 128
+      - 128
+      type: rgb
+task:
+  abs_action: false
+  dataset:
+    _target_: diffusion_policy.dataset.robocasa_replay_image_dataset.RobocasaReplayImageDataset
+    abs_action: false
+    dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
+    horizon: 16
+    n_obs_steps: 2
+    pad_after: 7
+    pad_before: 1
+    rotation_rep: rotation_6d
+    seed: 42
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+    use_cache: true
+    val_ratio: 0.02
+  train_subset: null
+  val_subset: null
+  dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
+  dataset_type: ph
+  env_runner:
+    _target_: diffusion_policy.env_runner.robocasa_robomimic_image_runner.RobocasaRobomimicImageRunner
+    abs_action: false
+    crf: 22
+    dataset_path: /proj/vondrick3/sruthi/robots/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams.hdf5
+    fps: 10
+    max_steps: 360
+    n_action_steps: 8
+    n_envs: 28
+    n_obs_steps: 2
+    n_test: 14
+    n_test_vis: 1
+    n_train: 14
+    n_train_vis: 1
+    past_action: false
+    render_obs_key: robot0_agentview_left_image
+    shape_meta:
+      action:
+        shape:
+        - 7
+      obs:
+        language_goal:
+          shape:
+          - 512
+        robot0_eye_in_hand_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_right_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+        robot0_agentview_left_image:
+          shape:
+          - 3
+          - 128
+          - 128
+          type: rgb
+    test_start_seed: 100000
+    tqdm_interval_sec: 1.0
+    train_start_idx: 0
+  name: square_image
+  shape_meta:
+    action:
+      shape:
+      - 7
+    obs:
+      language_goal:
+        shape:
+        - 512
+      robot0_eye_in_hand_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_right_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+      robot0_agentview_left_image:
+        shape:
+        - 3
+        - 128
+        - 128
+        type: rgb
+  task_name: square
+task_name: square_image
+training:
+  checkpoint_every: 50
+  debug: false
+  device: cuda:0
+  gradient_accumulate_every: 1
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  max_train_steps: null
+  max_val_steps: null
+  num_epochs: 8000
+  resume: false
+  rollout_every: 200
+  sample_every: 50
+  seed: 42
+  tqdm_interval_sec: 1.0
+  use_ema: true
+  val_every: 50
+  freeze_encoder: false
+val_dataloader:
+  batch_size: 64
+  num_workers: 4
+  shuffle: False
+  pin_memory: True
+  persistent_workers: False

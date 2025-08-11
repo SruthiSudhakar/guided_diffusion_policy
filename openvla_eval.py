@@ -71,13 +71,13 @@ python openvla_eval.py \
 
 python openvla_eval.py \
     --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:0 \
+    --device cuda:2 \
     --robocasa \
     --change_test_textures \
     --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 10 \
-    --specific_train_exs 2,2,2,2,2,2,2,2,2,2 \
-    --n_test 1 \
+    --n_envs 9 \
+    --specific_train_exs 2,39,42,110,146,214,241 \
+    --n_test 2 \
     --start_rollout_from_state 140 \
     --max_steps 200 \
     --prefix_dir mg253_guided_specificexs \

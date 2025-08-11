@@ -7,51 +7,95 @@ export MUJOCO_GL=osmesa
 export HYDRA_FULL_ERROR=1
 
 Usage:
-python score_rollouts.py \
-    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
-    --device cuda:2 \
+python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2025.02.15/imageonly_11.32.40_usegroupnorm/checkpoints/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:4 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_Human_fixed_textures \
-    --n_envs 200 \
-    --n_train 1 \
-    --n_test 199 \
-    --prefix_dir score_rollouts/human
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpctk_firsthalf \
+    --n_envs 12 \
+    --specific_train_exs 2,9,42,90,102,110,140,143,146,181,214 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 4 \
+    --prefix_dir jul22_sample \
+    --add mr140_ns4
 
-python score_rollouts.py \
+python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_first100 \
+    --n_envs 50 \
+    --n_train 49 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 3 \
+    --end_sampling 4 \
+    --prefix_dir test  
+
+python openvla_eval.py \
     --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_0_249 \
+    --n_envs 4 \
+    --specific_train_exs 2,110,142 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 10 \
+    --end_sampling 10 \
+    --prefix_dir test_10steps
+
+    
+python openvla_eval.py \
+    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:6 \
     --robocasa \
     --change_test_textures \
     --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 200 \
-    --n_train 199 \
-    --n_test 1 \
-    --prefix_dir score_rollouts/mg_val_kbpckt_firsthalf
+    --n_envs 9 \
+    --specific_train_exs 2,39,42,110,146,214,241 \
+    --n_test 2 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir mg253_vanilla_specificexs
 
-    
-python score_rollouts.py \
+python openvla_eval.py \
     --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --save_score_network_path data/checkpoints/dp_model/human_obs/fd_score_network.ckpt \
-    --device cuda:7 \
+    --device cuda:2 \
     --robocasa \
     --change_test_textures \
     --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 2 \
-    --n_train 1 \
-    --n_test 1 \
+    --n_envs 9 \
+    --specific_train_exs 2,39,42,110,146,214,241 \
+    --n_test 2 \
     --start_rollout_from_state 140 \
-    --max_steps 16 \
-    --prefix_dir test
+    --max_steps 200 \
+    --prefix_dir mg253_guided_specificexs \
+    --choose_sample \
+    --num_samples 10 \
+    --additional_steps 10 \
+    --end_sampling 10
 
 --specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
 
 """
+#   
+# /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
 import sys
+# use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
+
 import os
 import pathlib
 import click
@@ -61,21 +105,46 @@ import dill
 import wandb
 import json
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
+import pdb
 from omegaconf import OmegaConf,open_dict
 import datetime
 import yaml
 import h5py
 from data.dgx_data_registery import DATASETS
 from termcolor import colored
+import time
 import numpy as np
+# import tensorflow as tf
+from PIL import Image
+# from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
+# from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
+# from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
+# from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
+# from experiments.robot.openvla_utils import get_processor
+# from experiments.robot.robot_utils import ( get_action, get_image_resize_size, get_model,)
+# from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
+
 from torch.nn.parallel import DistributedDataParallel as DDP
 from types import SimpleNamespace
 import torch
 import torch.nn as nn
 import torch.optim as optim
+# from torch.utils.data import Dataset, DataLoader
 import numpy as np
-import pdb
-import pickle
+
+class SimpleClassifier(nn.Module):
+    def __init__(self, input_dim=65):
+        super(SimpleClassifier, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)            
+        )
+
+    def forward(self, x):
+        return self.model(x)
 
 @click.command()
 @click.option('-checkpoint', '--checkpoint', required=True)
@@ -112,9 +181,8 @@ import pickle
 @click.option('-additional_steps', '--additional_steps', default=0)
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
-@click.option('-save_score_network_path', '--save_score_network_path', required=True)
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, save_score_network_path):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -170,7 +238,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         print(colored(f'saving to: f{output_dir}', 'green'))
         
         with open (output_dir+'/save_some_deets.txt', 'w') as f: 
-            deets = ['checkpoint', checkpoint, 'save_score_network_path', save_score_network_path, 'output_dir', output_dir, 'dataset_path', \
+            deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', \
                 dataset_path, 'classifier_dir', classifier_dir, 'grad_steps', grad_steps, 'guidance_scale', \
                 guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, \
                 'object',object, 'n_train', n_train, 'n_test', n_test, "n_envs", n_envs, \
@@ -185,9 +253,17 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         # load checkpoint
         payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
         cfg = payload['cfg']
+        cfg.task.dataset.mode = cfg.dataset_mode
+        task_name = cfg.task_name
+        self.payload_cfg.task.dataset.tasks = {
+            task_name: None,
+        }
+        self.payload_cfg.task.dataset.tasks = {task_name: None}
+        self.payload_cfg.task.dataset.human_path = dataset_path
 
-        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.fail_detect_env_runner.FailDetectRunnerEval'
+        cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.clip_env_runner.ClipEnvRunner'
         cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
+        
         with open_dict(cfg):
             cfg['task']['env_runner']['object'] = object
             cfg['task']['env_runner']['save_stuff'] = save
@@ -211,7 +287,6 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['additional_steps']=additional_steps
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
-            cfg['task']['env_runner']['save_score_network_path']=save_score_network_path
 
         cfg['task']['dataset_path'] = dataset_path
         cfg['task']['env_runner']['dataset_path'] = dataset_path
@@ -232,17 +307,20 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         workspace.load_payload(payload, exclude_keys=None, include_keys=None)
         
         # get policy from workspace
-        policy = workspace.model
-        if cfg.training.use_ema:
-            policy = workspace.ema_model
-        
+        policy = workspace.ema_model
+
         device = torch.device(device)
         policy.to(device)
         policy.eval()
+
+        dataset: InMemoryVideoDataset
+        dataset = hydra.utils.instantiate(cfg.task.dataset)
+
         env_runner = hydra.utils.instantiate(
             cfg.task.env_runner,
             output_dir=output_dir)
-        runner_log, image_obs = env_runner.run(policy)
+        runner_log= env_runner.run(policy, dataset)
+
         # dump log to json
         json_log = dict()
         for key, value in runner_log.items():
@@ -250,17 +328,11 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 json_log[key] = value._path
             else:
                 json_log[key] = str(value)
-        out_path = os.path.join(output_dir, 'computed_rollout_scores.json')
+        out_path = os.path.join(output_dir, 'eval_log.json')
         json.dump(json_log, open(out_path, 'w'), indent=2, sort_keys=True)
-        
-        with open(f"{output_dir}/fd_scores.pkl", "wb") as f:
-            pickle.dump({'logdata':image_obs['logdata']}, f)
-        # with open(f"{output_dir}/fd_scores_with_images.pkl", "wb") as f:
-        #     pickle.dump(image_obs, f)
         out_path = os.path.join(output_dir, 'jgddone.json')
         json.dump({'done':'JGD done'}, open(out_path, 'w'), indent=2, sort_keys=True)
         print('done. output_dir:', output_dir)
-
 
 if __name__ == '__main__':
     main()

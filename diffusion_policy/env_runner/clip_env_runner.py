@@ -479,7 +479,7 @@ import torch
 from torch.nn.functional import pairwise_distance
 
 
-class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
+class ClipEnvRunner(BaseImageRunner):
     """
     Robomimic envs already enforces number of steps.
     """
@@ -540,6 +540,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         env_meta = FileUtils.get_env_metadata_from_dataset(
             dataset_path)
         if self.object:
+            assert True==False
             env_meta['env_name'] = 'LiftOtherObjects'
         # disable object state observation
         env_meta['env_kwargs']['use_object_obs'] = False
@@ -640,14 +641,17 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     ep_meta = f[f'data/demo_{ex}'].attrs.get("ep_meta", None)
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
-                inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
-                inputs = {key: value.to(device) for key, value in inputs.items()}
+                # inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                # inputs = {key: value.to(device) for key, value in inputs.items()}
+                # with torch.no_grad():
+                #     batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                #     batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
+                task_description = open_clip.tokenize(texts_batch)
                 with torch.no_grad():
-                    batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
-                    batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
-        
+                    clip_embedding = self.dataset.lang_model(task_description.to(device)).cpu().unsqueeze(0) # returns torch.Size([1, 1, 1024])
+
                 # Append the embeddings to the list
-                train_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
+                train_embeddings_list.extend(clip_embedding)  # Collect all the embeddings
         else:
             with h5py.File(dataset_path, 'r') as f:
                 for i in tqdm.tqdm(range(0, n_train, batch_size)):  # Process in batches
@@ -900,7 +904,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             self.processor = AutoProcessor.from_pretrained(MODEL_PATH)
 
 
-    def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
+    def run(self, policy: BaseImagePolicy, dataset):
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -966,6 +970,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 
                 # device transfer
                 obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+
+
+                
 
                 # run policy
                 with torch.no_grad():
@@ -1097,6 +1104,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     else:
                         print(f'step: {env_step_index}')
                         action_dict, classifier_action_pred = policy.predict_action(obs_dict)
+                        pdb.set_trace()
                         """
                         reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(100, dim=0)) 
                         temp=policy.predict_action(reshaped_obs_dict)[0]['action']
