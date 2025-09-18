@@ -76,6 +76,7 @@ class DiffusionUnetImagePolicy(BaseImagePolicy):
         self.obs_feature_dim = obs_feature_dim #1033
         self.action_dim = action_dim #10
         self.n_action_steps = n_action_steps #8
+        print('NUMBER OF ACTION STEPS:', self.n_action_steps)
         self.n_obs_steps = n_obs_steps #2
         self.obs_as_global_cond = obs_as_global_cond #true
         self.kwargs = kwargs

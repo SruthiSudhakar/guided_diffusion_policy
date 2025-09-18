@@ -52,6 +52,10 @@ import multiprocessing as mp
 import itertools
 import re
 
+import transformers
+from peft import PeftModel
+import qwen_vl_utils
+
 import subprocess
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -76,17 +80,29 @@ def get_gpu_with_lowest_memory_util():
 
     return min_util_gpu, min_util
 
+def add_text_to_image(input_image_path, text):
+    temp_image_path = input_image_path.replace(".png", "_annotated.png")
+
+    command = [
+        "ffmpeg", "-y",
+        "-i", input_image_path,
+        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=0x800080:borderw=1:bordercolor=0x800080",  # Purple text and border
+        temp_image_path
+    ]
+    with open(os.devnull, 'w') as devnull:
+        subprocess.run(command, stdout=devnull, stderr=devnull, check=True)
+    os.rename(temp_image_path, input_image_path)
+
 
 def add_text_to_video_with_ffmpeg(input_video_path, text):
     # Temporary output path
-    temp_video_path = input_video_path + '.temp.mp4'
+    temp_video_path = input_video_path.replace(".mp4", "_annotated.mp4")
     
     # FFmpeg command to add text to each frame
     command = [
         'ffmpeg',
         '-i', input_video_path,  # Input video file
-        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=#800080:borderw=1:bordercolor=#800080",  # Purple text and border
-        '-c:a', 'copy',  # Copy audio without re-encoding
+        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=0x800080:borderw=1:bordercolor=0x800080",  # Purple text and border
         temp_video_path  # Output video file
     ]
     
@@ -144,34 +160,6 @@ def images_to_video_side_by_side(images1, images2, images3, output_path='output.
 
     video.release()
 
-def images_to_video(images, output_path='output.mp4', fps=10):
-    # Assume all images are (3, H, W)
-    height, width = images[0].shape[1], images[0].shape[2]
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    video = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-    for img in images:
-        frame = np.transpose(img, (1, 2, 0))  # CHW -> HWC
-        if frame.shape[-1] == 4:
-            frame = frame[..., :3]
-        frame = (frame * 255).astype(np.uint8) if frame.dtype == np.float32 else frame
-        video.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-
-    video.release()
-
-
-class Action(TypedDict):
-    action: int
-    scene_description: str
-    completion_percentage: int
-
-class Output(TypedDict):
-    actions: list[Action]
-    best_action: Action
-    error: NotRequired[str]        # optional field for graceful failures
-# client = genai.Client(api_key="AIzaSyD6MKO5Hn1ryZ4mqqnLCGNvsERNXcS5pI8")
-# model = genai.GenerativeModel("models/gemini-2.0-flash")
-
 def create_env(env_meta, shape_meta, object, enable_render=True):
     modality_mapping = collections.defaultdict(list)
     for key, attr in shape_meta['obs'].items():
@@ -187,9 +175,6 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     )
     return env
 
-# def get_distinct_floorplan_and_style():
-#     return None
-
 from transformers import CLIPTokenizer, CLIPModel
 import torch
 # Load the CLIP model and tokenizer
@@ -200,11 +185,9 @@ clip_model = CLIPModel.from_pretrained(clip_model_name)
 from transformers import AutoProcessor
 from vllm import LLM, SamplingParams
 from qwen_vl_utils import process_vision_info
-SYSTEM_PROMPT_CRITIC = """You are a helpful video analyzer."""
-USER_PROMPT_CRITIC="This video shows a robot trying to place an object on a plate near the sink.\n\nWatch what happens AFTER the robot picks up the object:\n- TOWARDS: Robot successfully moves the object towards the plate (task succeeds)\n- AWAY: Robot fails and moves the object away from the plate (task fails)\n\nImportant: Judge based on whether the robot completes the task successfully or not.\n\nYour response MUST be:\nDirection: [TOWARDS/AWAY]\nConfidence: [High/Medium/Low]\nReasoning: [Brief explanation]"
-MODEL_PATH =  "models--nvidia--Cosmos-Reason1-7B/snapshots/1674a723286fd4207ddd80bdeebf63902a6676ee"
-print('THE MODEL PATH IS', MODEL_PATH)
-TEMPRATURE = 0.3
+import torch
+from torch.nn.functional import pairwise_distance
+
 
 def preprocess_video(video_info, processor):
     """Preprocess a single video for batch processing"""
@@ -245,229 +228,141 @@ def preprocess_video(video_info, processor):
         'llm_inputs': llm_inputs,
         'video_path': video_info,
     }
-def process_batch(llm, video_batch, processor, sampling_params, max_workers=100, chunk_size=100):
-    """Process a batch of videos using the LLM"""
-    # Limit workers to avoid conflicts with AsyncVectorEnv processes
-    # Use max 4 workers to prevent resource exhaustion
-    max_workers = min(max_workers, mp.cpu_count() // 2)
-    
-    # Process in smaller chunks to avoid overwhelming memory/pipes
-    all_results = {}
-    
-    for i in range(0, len(video_batch), chunk_size):
-        chunk = video_batch[i:i + chunk_size]
-        
-        # Preprocess videos in this chunk
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            preprocessed = list(executor.map(
-                lambda v: preprocess_video(v, processor),
-                chunk
-            ))
-        
-        # Extract LLM inputs
-        llm_inputs_list = [item['llm_inputs'] for item in preprocessed]
-        
-        # Batch inference
-        outputs = llm.generate(llm_inputs_list, sampling_params)
-        
-        # Collect results
-        for j, output in enumerate(outputs):
-            video_path = preprocessed[j]['video_path']
-            # all_results[video_path] = generated_text
 
-            # Process all N responses for this video
-            all_responses = []
-            binary_answers = []
-            
-            for response in output.outputs:
-                generated_text = response.text
-                all_responses.append(generated_text)
-                
-                # Extract binary answer from each response
-                match = re.search(r'Direction:\s*\[(TOWARDS|AWAY)\]', generated_text, re.IGNORECASE)
-                if not match:
-                    match = re.search(r'Direction:\s*(TOWARDS|AWAY)', generated_text, re.IGNORECASE)
-                if match:
-                    answer = match.group(1).lower()
-                    binary_answers.append(answer)
-            # Determine final answer by taking max (TOWARDS > AWAY)
-            final_answer = None
-            if binary_answers:
-                towards_count = binary_answers.count('towards')
-                away_count = binary_answers.count('away')
-                final_answer = 'towards' if towards_count >= away_count else ('away' if away_count > towards_count else 'Neither')
-                    
-            all_results[video_path] = {
-                'gentext': all_responses,
-                'individual_answers': binary_answers,
-                'towards_count': binary_answers.count('towards') if binary_answers else 0,
-                'away_count': binary_answers.count('away') if binary_answers else 0,
-                'others_count': len(all_responses) - len(binary_answers),
-                'binary': final_answer,
-                'n_queries': len(all_responses)
-            }
-    
-    return all_results
+def save_last_frame_first_third(video_path):
+    cap = cv2.VideoCapture(video_path)
 
-def get_gemini_response(env_idx, view, history_prompt, prompt_list):
-    pass
-#     # Start chat and send message
-#     retries = 5
-#     for attempt in range(retries):
-#         try:
-#             response = client.models.generate_content(
-#                 model='gemini-2.0-flash',
-#                 contents=prompt_list,
-#                 config={
-#                     'response_mime_type': 'application/json',
-#                     'response_schema': Output,
-#                 },
-#             )
-#             break  # If the request is successful, exit the loop
-#         except Exception as e:
-#             if attempt < retries - 1:
-#                 wait_time = 2 ** attempt      # Exponential backoff
-#                 print(f"Retrying in {wait_time} seconds...")
-#                 time.sleep(wait_time)
-#             else:
-#                 print("Max retries reached. Operation failed.")
-#                 raise e
-#     return env_idx, view, response, prompt_list
-def get_vlm_rank(all_video_paths, object_ids, step_idx):
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Use tqdm to show the progress bar
-        futures = []
-        # Submit the tasks for execution
-        for env_idx, object_name in enumerate(object_ids):
-            n_samples=str(len(all_video_paths))
-            task_description = f'Pick the {object_name} from the sink and place it on the plate that is next to the sink.'
-            history_prompt=history_prompt.replace('INSERT_TASK_DESC', task_description)
-            history_prompt=history_prompt.replace('N_SAMPLES', n_samples)
-            prompt1=prompt1.replace('N_SAMPLES', n_samples)
-            for view,samples in all_video_paths[env_idx].items():
-                prompt_list=[history_prompt,prompt1]
-                for sample_idx in range(len(samples)):
-                    prompt_list.append(f'Action {sample_idx+1} - Video: ')
-                    prompt_list.append(samples[sample_idx])
-                    myfile = client.files.upload(file=samples[sample_idx])
-                prompt_list.append(prompt2)
-                futures.append(executor.submit(get_gemini_response, env_idx, view, history_prompt, prompt_list))
-        # Wait for all futures to complete before moving on
-        concurrent.futures.wait(futures)
-        outputs = {}
-        # Collect results as they complete
-        for idx in range(len(futures)):
-            env_idx, view, response, prompt_list = futures[idx].result()
-            # for img_idx,img in enumerate(prompt_list): 
-            #     if type(img)==PIL.Image.Image:
-            #         img.save(f'test166_{idx}_{img_idx}.jpg') 
-        for future in concurrent.futures.as_completed(futures):
-            env_idx, view, response, prompt_list = future.result()
-            """
-            idx=3
-            env_idx, view, response, prompt_list = futures[idx].result()
-            for idx,img in enumerate(prompt_list): img.save(f'temp_{idx}.jpg') if type(img)==PIL.Image.Image else print('hi') 
-            """
-            if env_idx not in outputs:
-                outputs[env_idx]={}
-            try:
-                outputs[env_idx][view]={
-                    'response':json.loads(response.text),
-                }
-            except:
-                print('outputs not formatted correctly')
-                pdb.set_trace()
-        for env_idx,_ in outputs.items():
-            try:
-                pdb.set_trace()
-                arc0=[x['completion_percentage'] for x in outputs[env_idx]['robot0_eye_in_hand_image']['response']['actions']]
-                arc1=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_left_image']['response']['actions']]
-                arc2=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_right_image']['response']['actions']]
-                avg_results=[(a + b + c) / 3 for a, b, c in zip(arc0, arc1, arc2)]
-                outputs[env_idx]['avg_list']= avg_results
-                outputs[env_idx]['best_idx']= avg_results.index(max(avg_results))
-                assert outputs[env_idx]['best_idx'] < 10
-            except:
-                print('some issue. could not get avg list and best idx. or best_idx>=10')
-                pdb.set_trace()
-    return outputs
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video: {video_path}")
 
-def get_gemini_value(current_obs, all_samples_obs, object_ids, step_idx):
-    history_prompt=f"You are an expert roboticist tasked with evaluating the progress \
-    of a robot performing a task. The task is INSERT_TASK_DESC. We are evaluating N_SAMPLES \
-    potential actions that the robot could take from its current state. Each action results in \
-    a different outcome, and we have rendered images of these possible outcomes. For each action, \
-    output a task completion percentage (from 0 to 100, where 100 means the task is fully completed). \
-    The higher the percentage, the more progress the action has made toward placing the object into the sink. \
-    Here is the initial robot scene:"
+    # Get total number of frames
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    prompt1="Now here are the N_SAMPLES images of the outcomes from the proposed actions:"
+    # Move to last frame
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
+    ret, frame = cap.read()
+    cap.release()
 
-    prompt2="Return a JSON object that matches the given schema and contains:\n \
-        • a list of <action, scene_description, completion_percentage>\n \
-        • a best_action object.\n Do **not** wrap the JSON in markdown."
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        # Use tqdm to show the progress bar
-        futures = []
-        # Submit the tasks for execution
-        for env_idx, object_name in enumerate(object_ids):
-            n_samples=str(len(all_samples_obs))
-            task_description = f'Pick the {object_name} from the sink and place it on the plate that is next to the sink.'
-            history_prompt=history_prompt.replace('INSERT_TASK_DESC', task_description)
-            history_prompt=history_prompt.replace('N_SAMPLES', n_samples)
-            prompt1=prompt1.replace('N_SAMPLES', n_samples)
-            for view in ['robot0_agentview_right_image','robot0_agentview_left_image','robot0_eye_in_hand_image']:
-                image1 = Image.fromarray(np.flipud(current_obs[env_idx][view]))
-                prompt_list=[history_prompt,image1,prompt1]
-                for sample_idx in range(len(all_samples_obs)):
-                    prompt_list.append(f'Action {sample_idx+1} - Image: ')
-                    prompt_list.append(Image.fromarray((all_samples_obs[sample_idx][env_idx][view]*255).transpose(1,2,0).astype('uint8')))
-                prompt_list.append(prompt2)
-                futures.append(executor.submit(get_gemini_response, env_idx, view, history_prompt, prompt_list))
-        # Wait for all futures to complete before moving on
-        concurrent.futures.wait(futures)
-        outputs = {}
-        # Collect results as they complete
-        for idx in range(len(futures)):
-            env_idx, view, response, prompt_list = futures[idx].result()
-            # for img_idx,img in enumerate(prompt_list): 
-            #     if type(img)==PIL.Image.Image:
-            #         img.save(f'test166_{idx}_{img_idx}.jpg') 
-        for future in concurrent.futures.as_completed(futures):
-            env_idx, view, response, prompt_list = future.result()
-            """
-            idx=3
-            env_idx, view, response, prompt_list = futures[idx].result()
-            for idx,img in enumerate(prompt_list): img.save(f'temp_{idx}.jpg') if type(img)==PIL.Image.Image else print('hi') 
-            """
-            if env_idx not in outputs:
-                outputs[env_idx]={}
-            try:
-                outputs[env_idx][view]={
-                    'response':json.loads(response.text),
-                }
-            except:
-                print('outputs not formatted correctly')
-                pdb.set_trace()
-        for env_idx,_ in outputs.items():
-            try:
-                arc0=[x['completion_percentage'] for x in outputs[env_idx]['robot0_eye_in_hand_image']['response']['actions']]
-                arc1=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_left_image']['response']['actions']]
-                arc2=[x['completion_percentage'] for x in outputs[env_idx]['robot0_agentview_right_image']['response']['actions']]
-                avg_results=[(a + b + c) / 3 for a, b, c in zip(arc0, arc1, arc2)]
-                outputs[env_idx]['avg_list']= avg_results
-                outputs[env_idx]['best_idx']= avg_results.index(max(avg_results))
-                print(outputs[env_idx]['avg_list'],outputs[env_idx]['best_idx'])
-                if sum(outputs[env_idx]['avg_list'])>10:
-                    pdb.set_trace()
-                    print('hey')
-            except:
-                print('could not get avg list and best idx')
-                pdb.set_trace()
-    return outputs
-import torch
-from torch.nn.functional import pairwise_distance
+    if not ret:
+        raise ValueError("Could not read the last frame.")
 
+    # Crop first 1/3 width
+    h, w, _ = frame.shape
+    one_third_width = w // 3
+    cropped = frame[:, :one_third_width]
+
+    # Build output path (replace .mp4 with _last_frame.png)
+    base, _ = os.path.splitext(video_path)
+    output_path = f"{base}_last_frame.png"
+
+    cv2.imwrite(output_path, cropped)
+    return output_path
+
+def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs):
+    best_indices = []
+    raw_results = []
+    n_samples = len(all_video_paths) // n_envs
+
+    task_description = "Pick and place an object from the sink to the plate on the counter"
+    SYSTEM_PROMPT = f"""You are an expert roboticist tasked to predict task completion
+        percentage for a frame of a robot for the task of {task_description}.
+        The task completion percentages are between 0 and 100, where 100
+        corresponds to full task completion.
+    """
+    PROBLEM_TEMPLATE = f"""Here is a frame showing the robot performing the task. The frame shows the robot's current state.\n
+        For the task of {task_description}, output the task completion percentage (an integer from 0-100) for this current frame.
+        Please answer the question in the following format: <think> your reasoning </think> <answer> your answer </answer>.
+    """
+
+    # --- Build all conversations at once ---
+    all_conversations = []
+    sample_paths = []
+    for vid_path in all_video_paths:
+        sample_path = save_last_frame_first_third(vid_path)
+        sample_paths.append(sample_path)
+
+        conversation = [
+            {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": sample_path},
+                    {"type": "text", "text": PROBLEM_TEMPLATE},
+                ],
+            },
+        ]
+        all_conversations.append(conversation)
+
+    # --- Process in batches of 200 ---
+    batch_size = 200
+    all_outputs = []
+    total_batches = len(range(0, len(all_conversations), batch_size))
+    for batch_start in range(0, len(all_conversations), batch_size):
+        print('running cosmos batch',batch_start+1,'/',total_batches)
+        batch_end = min(batch_start + batch_size, len(all_conversations))
+        batch_conversations = all_conversations[batch_start:batch_end]
+
+        # Process batch texts and images
+        batch_texts = [
+            processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
+            for conv in batch_conversations
+        ]
+        batch_image_inputs, _ = zip(
+            *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
+        )
+        pdb.set_trace()
+        # flatten lists
+        batch_image_inputs = list(batch_image_inputs)
+        inputs = processor(
+            text=batch_texts,
+            images=batch_image_inputs,
+            padding=True,
+            return_tensors="pt",
+        ).to(model.device)
+
+        # --- Generate in batch ---
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs, max_new_tokens=1024)
+
+        generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
+        batch_outputs = processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+
+        all_outputs.extend(batch_outputs)
+
+    # --- Extract answers & annotate ---
+    completion_percentages = []
+    for idx, output in enumerate(all_outputs):
+        extracted = extract_answer(output)
+        completion_percentages.append(extracted)
+
+        add_text_to_video_with_ffmpeg(all_video_paths[idx], extracted)
+        add_text_to_image(sample_paths[idx], extracted)
+
+    # --- Group by environment & find best indices ---
+    for env_idx in range(n_envs):
+        env_scores = completion_percentages[env_idx * n_samples : (env_idx + 1) * n_samples]
+        best_indices.append(np.argmax(env_scores))
+        raw_results.append(env_scores[best_indices[-1]])
+
+    return best_indices, raw_results
+
+def extract_answer(answer):
+    try:
+        # Extract answer from completion
+        answer_match = re.search(r'<answer>(.*?)</answer>', answer, re.IGNORECASE | re.DOTALL)
+        answer_text = answer_match.group(1).strip()
+        number_match = re.search(r'\b(\d{1,3})\b', answer_text)
+        if number_match:       
+            extracted_number = int(number_match.group(1))
+            return extracted_number
+
+    except Exception as e:
+        print(f"Error evaluating completion: {e}")
+        return -1
 
 class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
@@ -870,24 +765,36 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 print("No GPUs found.")
             
             # Initialize LLM once
+            base_repo="/app/data/checkpoints/Qwen2.5-VL-7B-Instruct"
             print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-            self.llm = LLM(
-                model=MODEL_PATH,
-                limit_mm_per_prompt={"image": 5, "video": 5},
-                enforce_eager=True,
-                device=f'cuda:{LLM_GPU_ID}',
-                max_num_seqs=10,  # Allow batch processing
-                gpu_memory_utilization=0.9,
+            self.llm = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
+                base_repo, 
+                torch_dtype=torch.bfloat16,
+                device_map=f'cuda:{LLM_GPU_ID}',
+                trust_remote_code=True
             )
-            self.sampling_params = SamplingParams(
-                n=3,
-                temperature=TEMPRATURE,
-                top_k=50,
-                top_p=0.95,
-                repetition_penalty=1.05,
-                max_tokens=4096,
-            )
-            self.processor = AutoProcessor.from_pretrained(MODEL_PATH)
+            self.llm = PeftModel.from_pretrained(self.llm, "/app/data/checkpoints/checkpoint-9500")
+            self.llm = self.llm.eval()
+
+            # self.llm = LLM(
+            #     model=MODEL_PATH,
+            #     limit_mm_per_prompt={"image": 5, "video": 5},
+            #     enforce_eager=True,
+            #     device=f'cuda:{LLM_GPU_ID}',
+            #     max_num_seqs=10,  # Allow batch processing
+            #     gpu_memory_utilization=0.9,
+            # )
+            # self.sampling_params = SamplingParams(
+            #     n=3,
+            #     temperature=TEMPRATURE,
+            #     top_k=50,
+            #     top_p=0.95,
+            #     repetition_penalty=1.05,
+            #     max_tokens=4096,
+            # )
+            self.processor = transformers.AutoProcessor.from_pretrained(base_repo)
+
+            # self.processor = AutoProcessor.from_pretrained(MODEL_PATH)
 
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
@@ -1033,6 +940,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         for sample_idx in pbar:
                             pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
                             obs = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :8] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            pdb.set_trace()
                             sd_sample_obs.append(obs)
 
                             for extra_step in range(self.additional_steps):
@@ -1064,20 +972,13 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 list3_of_images = [img['robot0_eye_in_hand_image'] for img in one_env]
                                 for _,v in step2_sd_sample_obs.items():
                                     list3_of_images+=[img['robot0_eye_in_hand_image'] for img in v[sample_idx][env_idx]]
-                                # images_to_video(list_of_images,output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_view_{view}.mp4')
                                 images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
                         print('querying COSMOS-REASON1')
-                        flattened_videos_list = list(itertools.chain.from_iterable(videos))
-                        batch_results = process_batch(self.llm, flattened_videos_list, self.processor, self.sampling_params)
-                        best_action_indices=[0]*len(videos)
-                        for i, one_video in enumerate(videos):
-                            for j, one_sample in enumerate(one_video):
-                                add_text_to_video_with_ffmpeg(one_sample,batch_results[one_sample]['binary'])
-                                if batch_results[one_sample]['binary']=='towards':
-                                    best_action_indices[i] = j
+                        flattened_videos_list = list(itertools.chain.from_iterable(videos))                        
+                        best_action_indices, raw_results = get_qwen_rank_batchify(flattened_videos_list, self.llm, self.processor,n_envs)
                         print('best actions idx:', best_action_indices)
-                        chunk_step_actions[chunk_idx][env_step_index]={'best_action_indices':best_action_indices, 'raw_results': batch_results}
+                        chunk_step_actions[chunk_idx][env_step_index]={'best_action_indices':[str(x) for x in best_action_indices], 'raw_results': raw_results}
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
                         actions=actions[np.arange(actions.shape[0]), best_action_indices, :8, :]
                         action_dict={'action':torch.tensor(actions).to(device)}

@@ -7,7 +7,7 @@ ENV PATH=/opt/conda/bin:$PATH
 ENV CONDA_AUTO_UPDATE_CONDA=false
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y && apt-get install -y nfs-common \
     wget \
     git \
     vim \

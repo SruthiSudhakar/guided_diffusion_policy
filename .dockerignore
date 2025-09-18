@@ -81,3 +81,5 @@ MUJOCO_LOG.TXT
 # External repos
 externals/
 externals2/
+
+*.tar

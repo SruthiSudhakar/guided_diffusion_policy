@@ -22,38 +22,59 @@ python openvla_eval.py --checkpoint /proj/vondrick3/sruthi/robots/diffusion_poli
     --prefix_dir jul22_sample \
     --add mr140_ns4
 
+    
+python openvla_eval.py --checkpoint data/outputs/ss_train_diffusion_unet_clip_PnPSinkToCounter/base_policy/checkpoints/epoch=0900-train_loss=0.010.ckpt \
+    --device cuda:1 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 2 \
+    --specific_train_exs 2 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir test
+
 python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
     --device cuda:1 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_first100 \
-    --n_envs 50 \
-    --n_train 49 \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 22 \
+    --specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
     --n_test 1 \
     --start_rollout_from_state 140 \
     --max_steps 200 \
     --choose_sample \
-    --num_samples 5 \
-    --additional_steps 3 \
-    --end_sampling 4 \
-    --prefix_dir test  
+    --num_samples 10 \
+    --end_sampling 10 \
+    --prefix_dir sep15jgd
 
-python openvla_eval.py \
-    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:1 \
+python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:0 \
     --robocasa \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_fixed_textures_0_249 \
-    --n_envs 4 \
-    --specific_train_exs 2,110,142 \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 22 \
+    --specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
     --n_test 1 \
     --start_rollout_from_state 140 \
     --max_steps 200 \
-    --choose_sample \
-    --num_samples 5 \
-    --additional_steps 10 \
-    --end_sampling 10 \
-    --prefix_dir test_10steps
+    --prefix_dir sep15jgd
+
+    
+
+python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --device cuda:0 \
+    --robocasa \
+    --change_test_textures \
+    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --n_envs 5 \
+    --n_train 4 \
+    --n_test 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir sep15jgd
 
     
 python openvla_eval.py \
@@ -253,15 +274,17 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         # load checkpoint
         payload = torch.load(open(checkpoint, 'rb'), pickle_module=dill)
         cfg = payload['cfg']
-
-        if robocasa:
-            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
-            cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
-            # cfg['task']['env_runner']['render_obs_key'] = 'robot0_robotview' if 'mg' in dataset_path else 'robot0_agentview_left_image'
-        else:
-            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
-        
+            
         with open_dict(cfg):
+
+            if robocasa:
+                cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
+                cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
+                # cfg['task']['env_runner']['render_obs_key'] = 'robot0_robotview' if 'mg' in dataset_path else 'robot0_agentview_left_image'
+            else:
+                cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
+
+
             cfg['task']['env_runner']['object'] = object
             cfg['task']['env_runner']['save_stuff'] = save
             if save and 'robot0_eef_pos' not in cfg['task']['env_runner']['shape_meta']['obs']:
@@ -285,17 +308,17 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
 
-        cfg['task']['dataset_path'] = dataset_path
-        cfg['task']['env_runner']['dataset_path'] = dataset_path
-        cfg['task']['dataset']['dataset_path'] = dataset_path
-        cfg['task']['env_runner']['max_steps'] = max_steps
-        cfg['task']['env_runner']['n_train'] = int(n_train)
-        cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-        cfg['task']['env_runner']['n_test'] = int(n_test)
-        cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-        cfg['task']['env_runner']['n_envs'] = int(n_envs)
-        if test_start_seed:
-            cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
+            cfg['task']['dataset_path'] = dataset_path
+            cfg['task']['env_runner']['dataset_path'] = dataset_path
+            cfg['task']['dataset']['dataset_path'] = dataset_path
+            cfg['task']['env_runner']['max_steps'] = max_steps
+            cfg['task']['env_runner']['n_train'] = int(n_train)
+            cfg['task']['env_runner']['n_train_vis'] = int(n_train)
+            cfg['task']['env_runner']['n_test'] = int(n_test)
+            cfg['task']['env_runner']['n_test_vis'] = int(n_test)
+            cfg['task']['env_runner']['n_envs'] = int(n_envs)
+            if test_start_seed:
+                cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
 
 
         cls = hydra.utils.get_class(cfg._target_)
