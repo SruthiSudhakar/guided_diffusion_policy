@@ -55,9 +55,44 @@ import re
 import transformers
 from peft import PeftModel
 import qwen_vl_utils
+from transformers import AutoModelForVision2Seq
 
 import subprocess
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+from transformers import CLIPTokenizer, CLIPModel
+import torch
+# Load the CLIP model and tokenizer
+clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
+clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+clip_model = CLIPModel.from_pretrained(clip_model_name)
+
+from transformers import AutoProcessor
+# from vllm import LLM, SamplingParams
+# from qwen_vl_utils import process_vision_info
+import torch
+from torch.nn.functional import pairwise_distance
+
+import math
+from collections import defaultdict
+
+def elo(expected, score, k=32):
+    return k * (score - expected)
+
+def expected_score(rating_a, rating_b):
+    return 1 / (1 + 10 ** ((rating_b - rating_a) / 400))
+
+def update_ratings(rating_a, rating_b, winner, k=32):
+    exp_a = expected_score(rating_a, rating_b)
+    exp_b = 1 - exp_a
+
+    if winner == "a":
+        score_a, score_b = 1, 0
+    else:  # winner == "b"
+        score_a, score_b = 0, 1
+    new_a = rating_a + elo(exp_a, score_a, k)
+    new_b = rating_b + elo(exp_b, score_b, k)
+    return new_a, new_b
+
 
 def get_gpu_with_lowest_memory_util():
     # Run the nvidia-smi command to get the GPU status
@@ -92,7 +127,6 @@ def add_text_to_image(input_image_path, text):
     with open(os.devnull, 'w') as devnull:
         subprocess.run(command, stdout=devnull, stderr=devnull, check=True)
     os.rename(temp_image_path, input_image_path)
-
 
 def add_text_to_video_with_ffmpeg(input_video_path, text):
     # Temporary output path
@@ -175,59 +209,31 @@ def create_env(env_meta, shape_meta, object, enable_render=True):
     )
     return env
 
-from transformers import CLIPTokenizer, CLIPModel
-import torch
-# Load the CLIP model and tokenizer
-clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
-clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
-clip_model = CLIPModel.from_pretrained(clip_model_name)
+def _load_and_prepare_image(image_path: str) -> np.ndarray:
+    img = Image.open(image_path).convert('RGB')
+    return np.array(img, dtype=np.float32)
 
-from transformers import AutoProcessor
-from vllm import LLM, SamplingParams
-from qwen_vl_utils import process_vision_info
-import torch
-from torch.nn.functional import pairwise_distance
-
-
-def preprocess_video(video_info, processor):
-    """Preprocess a single video for batch processing"""
-    
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT_CRITIC},
-        {"role": "user", "content": [
-                {"type": "text", "text": USER_PROMPT_CRITIC},
-                {
-                    "type": "video",
-                    "video": video_info,
-                    "fps": 1,
-                },
-            ]
-        },
-    ]
-    
-    prompt = processor.apply_chat_template(
-        messages,
-        tokenize=False,
-        add_generation_prompt=True,
-    )
-    image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
-    
-    mm_data = {}
-    if image_inputs is not None:
-        mm_data["image"] = image_inputs
-    if video_inputs is not None:
-        mm_data["video"] = video_inputs
-    
-    llm_inputs = {
-        "prompt": prompt,
-        "multi_modal_data": mm_data,
-        "mm_processor_kwargs": video_kwargs,
-    }
-    
-    return {
-        'llm_inputs': llm_inputs,
-        'video_path': video_info,
-    }
+def create_overlay_image(image1_path: str, image2_path: str) -> Image.Image:
+    arr1 = _load_and_prepare_image(image1_path)
+    arr2 = _load_and_prepare_image(image2_path)
+    if arr1.shape != arr2.shape:
+        img1 = Image.fromarray(arr1.astype(np.uint8))
+        img2 = Image.fromarray(arr2.astype(np.uint8))
+        if img1.size != img2.size:
+            img2 = img2.resize(img1.size, Image.LANCZOS)
+            arr2 = np.array(img2, dtype=np.float32)
+    height, width = arr1.shape[:2]
+    img1 = Image.fromarray(arr1.astype(np.uint8))
+    img2 = Image.fromarray(arr2.astype(np.uint8))
+    combined = Image.new('RGB', (width * 2 + 2, height))
+    combined.paste(img1, (0, 0))
+    combined.paste(Image.new('RGB', (2, height), (255, 255, 0)), (width, 0))
+    combined.paste(img2, (width + 2, 0))
+    base1, _ = os.path.splitext(image1_path)
+    base2, _ = os.path.splitext(image2_path)
+    output_path = f"{base1}_and_{base2.split('/')[-1]}_overlay.png"
+    combined.save(output_path)
+    return combined, output_path
 
 def save_last_frame_first_third(video_path):
     cap = cv2.VideoCapture(video_path)
@@ -258,21 +264,123 @@ def save_last_frame_first_third(video_path):
     cv2.imwrite(output_path, cropped)
     return output_path
 
-def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs):
+def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, PROMPTS):
+    best_indices = []
+    raw_results = []
+
+    # Validate input: list of envs, each with list of sample videos
+    if not all_video_paths or not isinstance(all_video_paths[0], (list, tuple)):
+        raise ValueError("all_video_paths must be a list of lists of video paths per environment")
+
+    n_envs_local = len(all_video_paths)
+    n_samples = len(all_video_paths[0]) if n_envs_local > 0 else 0
+    if n_samples < 2:
+        # If only one sample, trivially choose index 0 for each env
+        return [0 for _ in range(n_envs_local)], [0.0 for _ in range(n_envs_local)]
+
+    # --- Build all pairwise conversations across envs ---
+    conversations = []
+    pair_metadata = []  # track env_idx and (i,j) mapping to conversation/output index
+    for env_idx, one_env_videos in enumerate(all_video_paths):
+        sample_image_paths = [save_last_frame_first_third(p) for p in one_env_videos]
+        for i, j in itertools.combinations(range(n_samples), 2):
+            left_path = sample_image_paths[i]
+            right_path = sample_image_paths[j]
+            overlay_image, overlay_image_path = create_overlay_image(left_path, right_path)
+            conversation = [
+                {"role": "system", "content": [{"type": "text", "text": PROMPTS['system_prompt']}]},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": overlay_image},
+                        {"type": "text", "text": PROMPTS['problem']},
+                    ],
+                },
+            ]
+            conversations.append(conversation)
+            pair_metadata.append({
+                'env_idx': env_idx,
+                'i': i,
+                'j': j,
+                'overlay_image_path': overlay_image_path
+            })
+
+    # --- Process in batches ---
+    batch_size = 200
+    all_outputs = []
+    total_batches = len(range(0, len(conversations), batch_size))
+    for batch_start in range(0, len(conversations), batch_size):
+        print('running cosmos batch', batch_start + 1, '/', total_batches)
+        batch_end = min(batch_start + batch_size, len(conversations))
+        batch_conversations = conversations[batch_start:batch_end]
+
+        batch_texts = [
+            processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
+            for conv in batch_conversations
+        ]
+        batch_image_inputs, _ = zip(
+            *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
+        )
+        batch_image_inputs = list(batch_image_inputs)
+        inputs = processor(
+            text=batch_texts,
+            images=batch_image_inputs,
+            padding=True,
+            return_tensors="pt",
+        ).to(model.device)
+
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs, max_new_tokens=1024)
+
+        generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
+        batch_outputs = processor.batch_decode(
+            generated_ids_trimmed,
+            skip_special_tokens=True,
+            clean_up_tokenization_spaces=False,
+        )
+        all_outputs.extend(batch_outputs)
+
+    # --- Extract numeric relative ranks and optionally annotate overlays ---
+    relative_ranks = []
+    for k, output in enumerate(all_outputs):
+        value = PROMPTS['extract_function'](output)
+        relative_ranks.append(value)
+        add_text_to_image(pair_metadata[k]['overlay_image_path'], value)
+        
+
+    # --- Elo aggregation per environment ---
+    env_ratings = [np.full((n_samples,), 1000.0, dtype=np.float32) for _ in range(n_envs_local)]
+    for k, meta in enumerate(pair_metadata):
+        env_idx = meta['env_idx']
+        i = meta['i']
+        j = meta['j']
+        score = relative_ranks[k]
+        if score == 0 or score is None:
+            continue
+        winner = 'b' if score > 0 else 'a'  # positive => right(j) better; negative => left(i) better
+        ra, rb = float(env_ratings[env_idx][i]), float(env_ratings[env_idx][j])
+        new_a, new_b = update_ratings(ra, rb, winner)
+        env_ratings[env_idx][i] = new_a
+        env_ratings[env_idx][j] = new_b
+
+    # --- Select best sample per environment and get sorted order ---
+    # sorted_orders = []  # New list to store the sorted order of samples
+    for env_idx in range(n_envs_local):
+        ratings = env_ratings[env_idx]
+        best_idx = int(np.argmax(ratings))
+        best_indices.append(best_idx)
+        raw_results.append(ratings)
+
+        # # Get sorted order from best to worst (descending order of ratings)
+        # sorted_indices = np.argsort(ratings)[::-1].tolist()  # Sort descending
+        # sorted_orders.append(sorted_indices)
+
+    return best_indices, raw_results #, sorted_orders
+
+def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs, PROMPTS):
     best_indices = []
     raw_results = []
     n_samples = len(all_video_paths) // n_envs
-
-    task_description = "Pick and place an object from the sink to the plate on the counter"
-    SYSTEM_PROMPT = f"""You are an expert roboticist tasked to predict task completion
-        percentage for a frame of a robot for the task of {task_description}.
-        The task completion percentages are between 0 and 100, where 100
-        corresponds to full task completion.
-    """
-    PROBLEM_TEMPLATE = f"""Here is a frame showing the robot performing the task. The frame shows the robot's current state.\n
-        For the task of {task_description}, output the task completion percentage (an integer from 0-100) for this current frame.
-        Please answer the question in the following format: <think> your reasoning </think> <answer> your answer </answer>.
-    """
 
     # --- Build all conversations at once ---
     all_conversations = []
@@ -282,12 +390,12 @@ def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs):
         sample_paths.append(sample_path)
 
         conversation = [
-            {"role": "system", "content": [{"type": "text", "text": SYSTEM_PROMPT}]},
+            {"role": "system", "content": [{"type": "text", "text": PROMPTS['system_prompt']}]},
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": sample_path},
-                    {"type": "text", "text": PROBLEM_TEMPLATE},
+                    {"type": "text", "text": PROMPTS['problem']},
                 ],
             },
         ]
@@ -310,7 +418,6 @@ def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs):
         batch_image_inputs, _ = zip(
             *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
         )
-        pdb.set_trace()
         # flatten lists
         batch_image_inputs = list(batch_image_inputs)
         inputs = processor(
@@ -332,11 +439,10 @@ def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs):
         )
 
         all_outputs.extend(batch_outputs)
-
     # --- Extract answers & annotate ---
     completion_percentages = []
     for idx, output in enumerate(all_outputs):
-        extracted = extract_answer(output)
+        extracted = PROMPTS['extract_function'](output)
         completion_percentages.append(extracted)
 
         add_text_to_video_with_ffmpeg(all_video_paths[idx], extracted)
@@ -409,6 +515,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             prompt_with_video=True,
             additional_steps=0,
             LLM_GPU_ID=7,
+            llm_path="",
+            PROMPTS={},
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -660,7 +768,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 #             temp_info = obj.pop('info',None)
                 #             obj['split']='B'
                 #             obj['obj_groups']=temp_info['cat']
-                #             # pdb.set_trace()
                 #             # print('replacing with new instance',temp_info['cat'] )
 
                 ep_meta = json.dumps(ep_meta)
@@ -753,7 +860,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.end_sampling=end_sampling
         self.prompt_with_video=prompt_with_video
         self.additional_steps=additional_steps
-
+        self.llm_path = llm_path
         if self.choose_sample:
             # Find the GPU with the lowest memory utilization
             LLM_GPU_ID, gpu_utilization = get_gpu_with_lowest_memory_util()
@@ -765,37 +872,54 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 print("No GPUs found.")
             
             # Initialize LLM once
-            base_repo="/app/data/checkpoints/Qwen2.5-VL-7B-Instruct"
             print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-            self.llm = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                base_repo, 
-                torch_dtype=torch.bfloat16,
-                device_map=f'cuda:{LLM_GPU_ID}',
-                trust_remote_code=True
+            self.llm = AutoModelForVision2Seq.from_pretrained(
+                self.llm_path,
+                torch_dtype='bfloat16',
+                device_map="auto",
+                trust_remote_code=True,
+                quantization_config=None,
             )
-            self.llm = PeftModel.from_pretrained(self.llm, "/app/data/checkpoints/checkpoint-9500")
             self.llm = self.llm.eval()
+            self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
+            #REGRESS COMPLETION SCORE
+            # task_description = "Pick and place an object from the sink to the plate on the counter"
+            # SYSTEM_PROMPT = f"""You are an expert roboticist tasked to predict task completion
+            #     percentage for a frame of a robot for the task of {task_description}.
+            #     The task completion percentages are between 0 and 100, where 100
+            #     corresponds to full task completion.
+            # """
+            # problem = f"""Here is a frame showing the robot performing the task. The frame shows the robot's current state.\n
+            #     For the task of {task_description}, output the task completion percentage (an integer from 0-100) for this current frame.
+            # """
 
-            # self.llm = LLM(
-            #     model=MODEL_PATH,
-            #     limit_mm_per_prompt={"image": 5, "video": 5},
-            #     enforce_eager=True,
-            #     device=f'cuda:{LLM_GPU_ID}',
-            #     max_num_seqs=10,  # Allow batch processing
-            #     gpu_memory_utilization=0.9,
-            # )
-            # self.sampling_params = SamplingParams(
-            #     n=3,
-            #     temperature=TEMPRATURE,
-            #     top_k=50,
-            #     top_p=0.95,
-            #     repetition_penalty=1.05,
-            #     max_tokens=4096,
-            # )
-            self.processor = transformers.AutoProcessor.from_pretrained(base_repo)
+            #SIDE BY SIDE - REGRESS RELATIVE progress
+            TASK_DESCRIPTION = "Pick and place an object from the sink to the plate on the counter"
+            SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
+The robot task is: {TASK_DESCRIPTION}
+You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
+            problem = """Look at these two side-by-side images of a robot performing the task.
 
-            # self.processor = AutoProcessor.from_pretrained(MODEL_PATH)
+Left side image: Shows the robot at one point during the task.
+Right side image: Shows the robot at another point during the task.
 
+Task: Compare the two images and determine the relative progress difference.
+- If the right image shows more progress toward task completion, respond with a positive number (1 to 100)
+- If the right image shows less progress toward task completion, respond with a negative number (-1 to -100)
+- If both images show equal progress, respond with 0
+
+The number should represent how much more or less progress the right image shows compared to the left."""
+            
+            extract_function = float
+
+            PROMPTS = {
+                "system_prompt": SYSTEM_PROMPT,
+                "problem": problem,
+                'extract_function': extract_function,
+                'call_function': get_qwen_relative_rank_batchify 
+            }
+            self.PROMPTS= PROMPTS
+            
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -940,7 +1064,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         for sample_idx in pbar:
                             pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
                             obs = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :8] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
-                            pdb.set_trace()
                             sd_sample_obs.append(obs)
 
                             for extra_step in range(self.additional_steps):
@@ -975,10 +1098,15 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
                         print('querying COSMOS-REASON1')
-                        flattened_videos_list = list(itertools.chain.from_iterable(videos))                        
-                        best_action_indices, raw_results = get_qwen_rank_batchify(flattened_videos_list, self.llm, self.processor,n_envs)
+                        # flattened_videos_list = list(itertools.chain.from_iterable(videos))  
+                        best_action_indices, raw_results = self.PROMPTS['call_function'](videos, self.llm, self.processor,n_envs,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
-                        chunk_step_actions[chunk_idx][env_step_index]={'best_action_indices':[str(x) for x in best_action_indices], 'raw_results': raw_results}
+                        # print('sorted orders (best to worst):', sorted_orders)
+                        chunk_step_actions[chunk_idx][env_step_index]={
+                            'best_action_indices':[str(x) for x in best_action_indices], 
+                            'raw_results': [[str(subitem) for subitem in item] for item in raw_results]
+                            # 'sorted_orders': [[str(idx) for idx in order] for order in sorted_orders]
+                        }
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
                         actions=actions[np.arange(actions.shape[0]), best_action_indices, :8, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
@@ -1009,7 +1137,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # print('INDEX:', env_step_index)
                 # if chunk_idx == n_chunks - 1:
-                #     pdb.set_trace()
                 # actionpath = np.load('/proj/vondrick3/sruthi/robots/diffusion_policy/data/outputs/2024.06.05/15.00.33_train_diffusion_unet_hybrid_liftph/checkpoints/epoch=0150-test_mean_score=0.980/1000galift_hammer_8_16_53_6/actions.npy', allow_pickle=True)
                 # env_action = actionpath[env_step_index,this_global_slice,:,:]
                 
