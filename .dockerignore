@@ -78,8 +78,23 @@ MUJOCO_LOG.TXT
 /tmp/
 /temp/
 
-# External repos
+# External repos (cloned during build)
 externals/
+!externals/gym/
 externals2/
 
+# Large tar files and Docker images
 *.tar
+*.tar.gz
+*.tgz
+guided_diffusion_policy_dockerimage.tar
+
+# Model checkpoints and large datasets
+*.hdf5
+
+# Additional repos that should be excluded
+cosmos-predict1/
+cosmos-predict2/
+cosmos-reason1/
+cosmos_reason1/
+sruthi-cosmos-reason1/

@@ -76,3 +76,5 @@ export PYTHONPATH=/app/cosmos-predict2:$PYTHONPATH
 pip uninstall gym -y
 cd externals/gym 
 pip install -e .
+cd ../../
+pip install bitsandbytes

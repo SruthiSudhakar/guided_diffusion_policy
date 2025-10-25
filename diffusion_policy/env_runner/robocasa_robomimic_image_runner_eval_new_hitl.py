@@ -1,4 +1,5 @@
 import os
+import pickle
 import wandb
 import numpy as np
 import torch
@@ -8,6 +9,8 @@ import tqdm
 import h5py
 import math
 import dill
+import random
+import time
 import wandb.sdk.data_types.video as wv
 from diffusion_policy.gym_util.async_vector_env import AsyncVectorEnv
 from diffusion_policy.gym_util.sync_vector_env import SyncVectorEnv
@@ -66,12 +69,6 @@ clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models 
 clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
 clip_model = CLIPModel.from_pretrained(clip_model_name)
 
-from transformers import AutoProcessor
-# from vllm import LLM, SamplingParams
-# from qwen_vl_utils import process_vision_info
-import torch
-from torch.nn.functional import pairwise_distance
-
 import math
 from collections import defaultdict
 
@@ -93,6 +90,52 @@ def update_ratings(rating_a, rating_b, winner, k=32):
     new_b = rating_b + elo(exp_b, score_b, k)
     return new_a, new_b
 
+def batch_update_ratings(ratings, results, k=32, use_magnitude=True, score_range=100):
+    """
+    ratings: dict[player] = rating
+    results: list of tuples, either:
+             - (player_a, player_b, winner) where winner is "a", "b", or "draw"
+             - (player_a, player_b, winner, score_magnitude) for magnitude-based scoring
+    use_magnitude: If True and score_magnitude provided, use it to determine degree of win
+    score_range: Expected range of score magnitudes (default 100 for [-100, 100])
+    """
+    deltas = {p: 0 for p in ratings}
+
+    # Compute rating change for each game based on *initial* ratings
+    for result in results:
+        if len(result) == 3:
+            a, b, winner = result
+            score_magnitude = None
+        else:
+            a, b, winner, score_magnitude = result
+
+        exp_a = expected_score(ratings[a], ratings[b])
+        exp_b = 1 - exp_a
+
+        if use_magnitude and score_magnitude is not None:
+            # Use magnitude to determine the score (0 to 1 scale)
+            # score > 0 means b wins, score < 0 means a wins
+            # Normalize from [-score_range, score_range] to [0, 1]
+            normalized_score = (score_magnitude + score_range) / (2.0 * score_range)
+            s_b = max(0.0, min(1.0, normalized_score))  # Clamp to [0, 1]
+            s_a = 1.0 - s_b
+        else:
+            # Binary outcome
+            if winner == "a":
+                s_a, s_b = 1, 0
+            elif winner == "b":
+                s_a, s_b = 0, 1
+            else:
+                s_a, s_b = 0.5, 0.5
+
+        deltas[a] += k * (s_a - exp_a)
+        deltas[b] += k * (s_b - exp_b)
+
+    # Apply all updates simultaneously (order-independent)
+    for p in ratings:
+        ratings[p] += deltas[p]
+
+    return ratings
 
 def get_gpu_with_lowest_memory_util():
     # Run the nvidia-smi command to get the GPU status
@@ -116,36 +159,30 @@ def get_gpu_with_lowest_memory_util():
     return min_util_gpu, min_util
 
 def add_text_to_image(input_image_path, text):
-    temp_image_path = input_image_path.replace(".png", "_annotated.png")
+    # Read image with OpenCV (much faster than ffmpeg)
+    img = cv2.imread(input_image_path)
+    if img is None:
+        return  # Skip if image cannot be read
 
-    command = [
-        "ffmpeg", "-y",
-        "-i", input_image_path,
-        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=0x800080:borderw=1:bordercolor=0x800080",  # Purple text and border
-        temp_image_path
-    ]
-    with open(os.devnull, 'w') as devnull:
-        subprocess.run(command, stdout=devnull, stderr=devnull, check=True)
-    os.rename(temp_image_path, input_image_path)
+    # Convert text to string if needed
+    text = str(text)
 
-def add_text_to_video_with_ffmpeg(input_video_path, text):
-    # Temporary output path
-    temp_video_path = input_video_path.replace(".mp4", "_annotated.mp4")
-    
-    # FFmpeg command to add text to each frame
-    command = [
-        'ffmpeg',
-        '-i', input_video_path,  # Input video file
-        '-vf', f"drawtext=text='{text}':x=50:y=50:fontsize=24:fontcolor=0x800080:borderw=1:bordercolor=0x800080",  # Purple text and border
-        temp_video_path  # Output video file
-    ]
-    
-    # Run the command and suppress logs
-    with open(os.devnull, 'w') as devnull:
-        subprocess.run(command, stdout=devnull, stderr=devnull, check=True)
-    
-    # Rename temporary file to original file after processing
-    os.rename(temp_video_path, input_video_path)
+    # Add text with OpenCV (purple color in BGR format)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.8
+    font_color = (128, 0, 128)  # Purple in BGR
+    border_color = (128, 0, 128)  # Purple border
+    thickness = 2
+    border_thickness = 4
+    position = (50, 50)
+
+    # Draw border (thicker text in background)
+    cv2.putText(img, text, position, font, font_scale, border_color, border_thickness, cv2.LINE_AA)
+    # Draw main text
+    cv2.putText(img, text, position, font, font_scale, font_color, thickness, cv2.LINE_AA)
+
+    # Write image back (much faster than ffmpeg)
+    cv2.imwrite(input_image_path, img)
 
 def images_to_video_side_by_side(images1, images2, images3, output_path='output.mp4', fps=10):
     # Ensure all images are the same size and are in the correct format
@@ -235,7 +272,7 @@ def create_overlay_image(image1_path: str, image2_path: str) -> Image.Image:
     combined.save(output_path)
     return combined, output_path
 
-def save_last_frame_first_third(video_path):
+def save_last_frame_method(video_path):
     cap = cv2.VideoCapture(video_path)
 
     if not cap.isOpened():
@@ -255,7 +292,7 @@ def save_last_frame_first_third(video_path):
     # Crop first 1/3 width
     h, w, _ = frame.shape
     one_third_width = w // 3
-    cropped = frame[:, :one_third_width]
+    cropped = frame#[:, :one_third_width]
 
     # Build output path (replace .mp4 with _last_frame.png)
     base, _ = os.path.splitext(video_path)
@@ -264,7 +301,7 @@ def save_last_frame_first_third(video_path):
     cv2.imwrite(output_path, cropped)
     return output_path
 
-def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, PROMPTS):
+def get_user_input_direct_selection(all_video_paths, model, processor, n_envs, PROMPTS):
     best_indices = []
     raw_results = []
 
@@ -276,199 +313,60 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
     n_samples = len(all_video_paths[0]) if n_envs_local > 0 else 0
     if n_samples < 2:
         # If only one sample, trivially choose index 0 for each env
-        return [0 for _ in range(n_envs_local)], [0.0 for _ in range(n_envs_local)]
+        return [0 for _ in range(n_envs_local)], [[1.0] for _ in range(n_envs_local)]
 
-    # --- Build all pairwise conversations across envs ---
-    conversations = []
-    pair_metadata = []  # track env_idx and (i,j) mapping to conversation/output index
+    print("\n" + "="*80)
+    print("HUMAN-IN-THE-LOOP SAMPLE SELECTION")
+    print("="*80)
+    print(f"Number of environments: {n_envs_local}")
+    print(f"Number of samples per environment: {n_samples}")
+    print("\nFor each environment, you will see the last frame images from all samples.")
+    print("You need to select which sample shows the most progress toward the task.")
+    print("="*80 + "\n")
+
+    # Process each environment
     for env_idx, one_env_videos in enumerate(all_video_paths):
-        sample_image_paths = [save_last_frame_first_third(p) for p in one_env_videos]
-        for i, j in itertools.combinations(range(n_samples), 2):
-            left_path = sample_image_paths[i]
-            right_path = sample_image_paths[j]
-            overlay_image, overlay_image_path = create_overlay_image(left_path, right_path)
-            conversation = [
-                {"role": "system", "content": [{"type": "text", "text": PROMPTS['system_prompt']}]},
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": overlay_image},
-                        {"type": "text", "text": PROMPTS['problem']},
-                    ],
-                },
-            ]
-            conversations.append(conversation)
-            pair_metadata.append({
-                'env_idx': env_idx,
-                'i': i,
-                'j': j,
-                'overlay_image_path': overlay_image_path
-            })
+        print(f"\n{'='*80}")
+        print(f"ENVIRONMENT {env_idx + 1}/{n_envs_local}")
+        print(f"{'='*80}")
 
-    # --- Process in batches ---
-    batch_size = 200
-    all_outputs = []
-    total_batches = len(range(0, len(conversations), batch_size))
-    for batch_start in range(0, len(conversations), batch_size):
-        print('running cosmos batch', batch_start + 1, '/', total_batches)
-        batch_end = min(batch_start + batch_size, len(conversations))
-        batch_conversations = conversations[batch_start:batch_end]
+        # Extract last frame from each video
+        sample_image_paths = []
+        for sample_idx, video_path in enumerate(one_env_videos):
+            last_frame_path = save_last_frame_method(video_path)
+            sample_image_paths.append(last_frame_path)
+            print(f"Sample {sample_idx}:")
+            print(f"  Video: {video_path}")
+            print(f"  Last frame image: {last_frame_path}")
 
-        batch_texts = [
-            processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
-            for conv in batch_conversations
-        ]
-        batch_image_inputs, _ = zip(
-            *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
-        )
-        batch_image_inputs = list(batch_image_inputs)
-        inputs = processor(
-            text=batch_texts,
-            images=batch_image_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to(model.device)
+        print(f"\nPlease review the {n_samples} last frame images above.")
+        print(f"Which sample (0-{n_samples-1}) shows the MOST progress toward completing the task?")
 
-        with torch.no_grad():
-            generated_ids = model.generate(**inputs, max_new_tokens=1024)
+        while True:
+            try:
+                user_input = input(f"Enter sample index (0-{n_samples-1}): ").strip()
+                selected_idx = int(user_input)
+                if 0 <= selected_idx < n_samples:
+                    break
+                else:
+                    print(f"Invalid selection. Please enter a number between 0 and {n_samples-1}:")
+            except ValueError:
+                print(f"Invalid input. Please enter a whole number between 0 and {n_samples-1}:")
 
-        generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
-        batch_outputs = processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-        all_outputs.extend(batch_outputs)
+        best_indices.append(selected_idx)
+        # Create a simple "score" array with 1.0 for selected, 0.0 for others
+        scores = [1.0 if i == selected_idx else 0.0 for i in range(n_samples)]
+        raw_results.append(scores)
 
-    # --- Extract numeric relative ranks and optionally annotate overlays ---
-    relative_ranks = []
-    for k, output in enumerate(all_outputs):
-        value = PROMPTS['extract_function'](output)
-        relative_ranks.append(value)
-        add_text_to_image(pair_metadata[k]['overlay_image_path'], value)
-        
+        print(f"✓ Selected sample {selected_idx} for environment {env_idx}")
 
-    # --- Elo aggregation per environment ---
-    env_ratings = [np.full((n_samples,), 1000.0, dtype=np.float32) for _ in range(n_envs_local)]
-    for k, meta in enumerate(pair_metadata):
-        env_idx = meta['env_idx']
-        i = meta['i']
-        j = meta['j']
-        score = relative_ranks[k]
-        if score == 0 or score is None:
-            continue
-        winner = 'b' if score > 0 else 'a'  # positive => right(j) better; negative => left(i) better
-        ra, rb = float(env_ratings[env_idx][i]), float(env_ratings[env_idx][j])
-        new_a, new_b = update_ratings(ra, rb, winner)
-        env_ratings[env_idx][i] = new_a
-        env_ratings[env_idx][j] = new_b
-
-    # --- Select best sample per environment and get sorted order ---
-    # sorted_orders = []  # New list to store the sorted order of samples
-    for env_idx in range(n_envs_local):
-        ratings = env_ratings[env_idx]
-        best_idx = int(np.argmax(ratings))
-        best_indices.append(best_idx)
-        raw_results.append(ratings)
-
-        # # Get sorted order from best to worst (descending order of ratings)
-        # sorted_indices = np.argsort(ratings)[::-1].tolist()  # Sort descending
-        # sorted_orders.append(sorted_indices)
-
-    return best_indices, raw_results #, sorted_orders
-
-def get_qwen_rank_batchify(all_video_paths, model, processor, n_envs, PROMPTS):
-    best_indices = []
-    raw_results = []
-    n_samples = len(all_video_paths) // n_envs
-
-    # --- Build all conversations at once ---
-    all_conversations = []
-    sample_paths = []
-    for vid_path in all_video_paths:
-        sample_path = save_last_frame_first_third(vid_path)
-        sample_paths.append(sample_path)
-
-        conversation = [
-            {"role": "system", "content": [{"type": "text", "text": PROMPTS['system_prompt']}]},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image", "image": sample_path},
-                    {"type": "text", "text": PROMPTS['problem']},
-                ],
-            },
-        ]
-        all_conversations.append(conversation)
-
-    # --- Process in batches of 200 ---
-    batch_size = 200
-    all_outputs = []
-    total_batches = len(range(0, len(all_conversations), batch_size))
-    for batch_start in range(0, len(all_conversations), batch_size):
-        print('running cosmos batch',batch_start+1,'/',total_batches)
-        batch_end = min(batch_start + batch_size, len(all_conversations))
-        batch_conversations = all_conversations[batch_start:batch_end]
-
-        # Process batch texts and images
-        batch_texts = [
-            processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
-            for conv in batch_conversations
-        ]
-        batch_image_inputs, _ = zip(
-            *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
-        )
-        # flatten lists
-        batch_image_inputs = list(batch_image_inputs)
-        inputs = processor(
-            text=batch_texts,
-            images=batch_image_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to(model.device)
-
-        # --- Generate in batch ---
-        with torch.no_grad():
-            generated_ids = model.generate(**inputs, max_new_tokens=1024)
-
-        generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
-        batch_outputs = processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
-
-        all_outputs.extend(batch_outputs)
-    # --- Extract answers & annotate ---
-    completion_percentages = []
-    for idx, output in enumerate(all_outputs):
-        extracted = PROMPTS['extract_function'](output)
-        completion_percentages.append(extracted)
-
-        add_text_to_video_with_ffmpeg(all_video_paths[idx], extracted)
-        add_text_to_image(sample_paths[idx], extracted)
-
-    # --- Group by environment & find best indices ---
-    for env_idx in range(n_envs):
-        env_scores = completion_percentages[env_idx * n_samples : (env_idx + 1) * n_samples]
-        best_indices.append(np.argmax(env_scores))
-        raw_results.append(env_scores[best_indices[-1]])
+    print(f"\n{'='*80}")
+    print("SELECTION COMPLETE")
+    print(f"{'='*80}")
+    print(f"Selected indices: {best_indices}")
+    print(f"{'='*80}\n")
 
     return best_indices, raw_results
-
-def extract_answer(answer):
-    try:
-        # Extract answer from completion
-        answer_match = re.search(r'<answer>(.*?)</answer>', answer, re.IGNORECASE | re.DOTALL)
-        answer_text = answer_match.group(1).strip()
-        number_match = re.search(r'\b(\d{1,3})\b', answer_text)
-        if number_match:       
-            extracted_number = int(number_match.group(1))
-            return extracted_number
-
-    except Exception as e:
-        print(f"Error evaluating completion: {e}")
-        return -1
 
 class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
     """
@@ -517,6 +415,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             LLM_GPU_ID=7,
             llm_path="",
             PROMPTS={},
+            wm_checkpoint_path="",
+            wm_guidance=7.0,
+            wm_num_sampling_steps=10,
+            wm_seed=0,
+            num_actions_to_execute=8,
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
@@ -678,6 +581,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
+                # Handle username variations (sruthisudhakar vs sruthi.sudhakar)
+                ep_meta = ep_meta.replace('/home/sruthisudhakar/', '/app/')
+                ep_meta = ep_meta.replace('/home/sruthi.sudhakar/', '/app/')
+                ep_meta = ep_meta.replace('/app/guided_diffusion_policy/externals2/','/app/externals/')
+                ep_meta = ep_meta.replace('/app/guided_diffusion_policy/externals2/','/app/externals/')
                 ep_meta=ep_meta.replace('/proj/vondrick3/sruthi/robots/robocasa/robocasa/models/assets/generative_textures/','')
                 language_goal_embedding = train_embeddings_list[embedding_idx]
                 embedding_idx+=1
@@ -771,6 +679,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 #             # print('replacing with new instance',temp_info['cat'] )
 
                 ep_meta = json.dumps(ep_meta)
+                # Handle username variations (sruthisudhakar vs sruthi.sudhakar)
+                ep_meta = ep_meta.replace('/home/sruthisudhakar/', '/app/')
+                ep_meta = ep_meta.replace('/home/sruthi.sudhakar/', '/app/')
+                ep_meta = ep_meta.replace('/app/guided_diffusion_policy/externals2/','/app/externals/')
                 ep_meta=ep_meta.replace('/proj/vondrick3/sruthi/robots/robocasa/robocasa/models/assets/generative_textures/','')
                 language_goal_embedding = test_embeddings_list[embedding_idx]
                 embedding_idx+=1
@@ -860,6 +772,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.end_sampling=end_sampling
         self.prompt_with_video=prompt_with_video
         self.additional_steps=additional_steps
+        self.num_actions_to_execute=num_actions_to_execute
         self.llm_path = llm_path
         if self.choose_sample:
             # Find the GPU with the lowest memory utilization
@@ -873,53 +786,68 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             
             # Initialize LLM once
             print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_8bit=True,
+                llm_int8_threshold=6.0
+            )
             self.llm = AutoModelForVision2Seq.from_pretrained(
                 self.llm_path,
                 torch_dtype='bfloat16',
-                device_map="auto",
+                device_map={"": f"cuda:{LLM_GPU_ID}"},
                 trust_remote_code=True,
-                quantization_config=None,
+                # quantization_config=None,
+                quantization_config=quantization_config,
             )
             self.llm = self.llm.eval()
             self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
-            #REGRESS COMPLETION SCORE
-            # task_description = "Pick and place an object from the sink to the plate on the counter"
-            # SYSTEM_PROMPT = f"""You are an expert roboticist tasked to predict task completion
-            #     percentage for a frame of a robot for the task of {task_description}.
-            #     The task completion percentages are between 0 and 100, where 100
-            #     corresponds to full task completion.
-            # """
-            # problem = f"""Here is a frame showing the robot performing the task. The frame shows the robot's current state.\n
-            #     For the task of {task_description}, output the task completion percentage (an integer from 0-100) for this current frame.
-            # """
-
-            #SIDE BY SIDE - REGRESS RELATIVE progress
-            TASK_DESCRIPTION = "Pick and place an object from the sink to the plate on the counter"
+            task_description = "Pick and place an object from the sink to the plate on the counter"
             SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
-The robot task is: {TASK_DESCRIPTION}
-You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
-            problem = """Look at these two side-by-side images of a robot performing the task.
+            The robot task is: {task_description}
+            You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
 
-Left side image: Shows the robot at one point during the task.
-Right side image: Shows the robot at another point during the task.
+            problem = f"""Look at these two side-by-side images of a robot performing the task. \
 
-Task: Compare the two images and determine the relative progress difference.
-- If the right image shows more progress toward task completion, respond with a positive number (1 to 100)
-- If the right image shows less progress toward task completion, respond with a negative number (-1 to -100)
-- If both images show equal progress, respond with 0
+            Left side image: Shows the robot at one point during the task. \
+            Right side image: Shows the robot at another point during the task. \
 
-The number should represent how much more or less progress the right image shows compared to the left."""
-            
+            Task: Compare the two images and determine the relative progress difference. \
+            - If the right image shows more progress toward task completion, respond with a positive number of how much farther (1 to 100) \
+            - If the right image shows less progress toward task completion, respond with a negative number (-1 to -100) \
+
+            The number should represent how much more or less progress the right image shows compared to the left."""
+
             extract_function = float
 
             PROMPTS = {
                 "system_prompt": SYSTEM_PROMPT,
                 "problem": problem,
                 'extract_function': extract_function,
-                'call_function': get_qwen_relative_rank_batchify 
+                'call_function': get_user_input_direct_selection
             }
             self.PROMPTS= PROMPTS
-            
+
+    def generate_next_step(self, current_obs, list_actions, output_dir):
+        """
+        Generate predicted next frames using the world model.
+
+        Args:
+            current_states: List of environment observations, where each environment contains
+                          a list of timestep observations (dicts with camera keys)
+            list_actions: List of actions per environment, shape (1, 8, 7) per env
+
+        Returns:
+            List of predicted observations in the same format as current_states
+        """        
+        os.makedirs(output_dir, exist_ok=True)
+        save_data = {
+            'current_states': current_obs,
+            'list_actions': list_actions
+        }
+
+        save_path = os.path.join(output_dir, 'generate_next_step_inputs.pkl')
+        with open(save_path, 'wb') as f:
+            pickle.dump(save_data, f)
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
         device = policy.device
@@ -987,6 +915,16 @@ The number should represent how much more or less progress the right image shows
                 
                 # device transfer
                 obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+
+                # Reseed RNGs before each policy prediction to get stochastic diffusion samples
+                # while keeping environment conditions deterministic
+                # Use time and process ID to ensure truly random seed across runs
+                random_seed = int((time.time() * 1000000) % (2**31 - 1))
+                torch.manual_seed(random_seed)
+                np.random.seed(random_seed)
+                random.seed(random_seed)
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(random_seed)
 
                 # run policy
                 with torch.no_grad():
@@ -1056,14 +994,20 @@ The number should represent how much more or less progress the right image shows
                         sd_sample_obs = []
                         step2_sd_sample_obs = {}
                         for extra_step in range(self.additional_steps):  step2_sd_sample_obs[extra_step]=[]
-                        all_samples_obs = []
-                        reset_obs=[]
-                        current_obs=env.call('get_raw_observations')
+                        current_obs = env.call('get_raw_observations')
+                        # Flip images vertically (they come upside down from the renderer)
+                        for idx in range(len(current_obs)):
+                            for key in ['robot0_agentview_left_image', 'robot0_agentview_right_image', 'robot0_eye_in_hand_image']:
+                                current_obs[idx][key] = current_obs[idx][key][::-1, :, :]  # Flip along height axis (C, H, W) format
+
                         pbar=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
                         aggregated_obs = []
                         for sample_idx in pbar:
                             pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
-                            obs = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :8] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
+                            results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            obs = [r[0] for r in results]  # temp_observations from each env
+                            processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                             sd_sample_obs.append(obs)
 
                             for extra_step in range(self.additional_steps):
@@ -1071,12 +1015,15 @@ The number should represent how much more or less progress the right image shows
                                 for key in reshaped_obs_dict.keys():
                                     if key=='language_goal':
                                         continue
-                                    step2_obs_dict[key] = np.stack([np.stack([cv2.resize(one_env_obs_step[key].transpose(1,2,0), (128,128), interpolation=cv2.INTER_AREA).transpose(2,0,1) for one_env_obs_step in one_env_obs[-2:]]) for one_env_obs in obs])
+                                    step2_obs_dict[key] = np.stack([np.stack([one_env_obs_step[key] for one_env_obs_step in one_env_obs[-2:]]) for one_env_obs in processed_obs])
                                 step2_obs_dict = dict_apply(step2_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
                                 step2_actions = policy.predict_action(step2_obs_dict)[0]['action_pred'].detach().to('cpu').numpy()
                                 add_on = np.tile([0., -0.,  0.,  0., -1.], (step2_actions.shape[0], step2_actions.shape[1], 1))
                                 step2_extended_env_action = np.concatenate((step2_actions, add_on), axis=-1)
-                                obs = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, :8] for i in range(step2_extended_env_action.shape[0])])
+                                self.generate_next_step(obs,[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
+                                results = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])])
+                                obs = [r[0] for r in results]  # temp_observations from each env
+                                processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                                 step2_sd_sample_obs[extra_step].append(obs)
                             env.call_each('reset_after_hallucination',args_list=[(curr_state,) for curr_state in current_state])
 
@@ -1097,8 +1044,8 @@ The number should represent how much more or less progress the right image shows
                                     list3_of_images+=[img['robot0_eye_in_hand_image'] for img in v[sample_idx][env_idx]]
                                 images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
-                        print('querying COSMOS-REASON1')
-                        # flattened_videos_list = list(itertools.chain.from_iterable(videos))  
+                        print('Getting user input for sample selection')
+                        # flattened_videos_list = list(itertools.chain.from_iterable(videos))
                         best_action_indices, raw_results = self.PROMPTS['call_function'](videos, self.llm, self.processor,n_envs,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
                         # print('sorted orders (best to worst):', sorted_orders)
@@ -1108,7 +1055,7 @@ The number should represent how much more or less progress the right image shows
                             # 'sorted_orders': [[str(idx) for idx in order] for order in sorted_orders]
                         }
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
-                        actions=actions[np.arange(actions.shape[0]), best_action_indices, :8, :]
+                        actions=actions[np.arange(actions.shape[0]), best_action_indices, :self.num_actions_to_execute, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
                     else:
                         print(f'step: {env_step_index}')

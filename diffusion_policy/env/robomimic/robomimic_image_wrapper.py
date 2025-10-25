@@ -85,11 +85,12 @@ class RobomimicImageWrapper(gym.Env):
         for key in self.observation_space.keys():
             if key in self.render_obs_key and self.observation_space[key].shape!=raw_obs[key].shape:
                 resize_shape=self.observation_space[key].shape[1:]
-                raw_obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), resize_shape, interpolation=cv2.INTER_AREA).transpose(2,0,1)
-            if key=='language_goal':
+                obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), resize_shape, interpolation=cv2.INTER_AREA).transpose(2,0,1)
+            elif key=='language_goal':
                 #TODO: what if we change the language goal? this should not return the old language goal then.
-                raw_obs['language_goal'] = self.language_goal
-            obs[key] = raw_obs[key]
+                obs[key] = self.language_goal
+            else:
+                obs[key] = raw_obs[key]
         return obs
 
     def seed(self, seed=None):
@@ -141,7 +142,8 @@ class RobomimicImageWrapper(gym.Env):
 
     def hallucinate_step(self, action):
         raw_obs, reward, done, info = self.env.step(action)
-        return raw_obs, reward, done, info
+        processed_obs = self.get_observation(raw_obs)
+        return raw_obs, processed_obs, reward, done, info
     
     def render(self, mode='rgb_array'):
         if self.render_cache is None:
