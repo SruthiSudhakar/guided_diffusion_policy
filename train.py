@@ -15,10 +15,10 @@ CUDA_VISIBLE_DEVICES=6 python train.py \
     --config-name=train_robocasa_base_dp_clip_policy.yaml \
     training.seed=42 \
     dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_test' \
-    task.dataset.human_path=externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/expert_demos_fixed_textures_224.hdf5 \
-    task.name=PnPSinkToCounter \
-    "task.dataset.tasks={PnPSinkToCounter: null}"
+    hydra.run.dir='data/outputs/test/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
+    task.dataset.human_path=externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams_im224.hdf5 \
+    task.name=PnPStoveToCounter \
+    "task.dataset.tasks={PnPStoveToCounter: null}"
 
 
 

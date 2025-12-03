@@ -79,7 +79,6 @@ class TimmObsEncoder(ModuleAttrMixin):
         Assumes low_dim input: B,T,D
         """
         super().__init__()
-        # pdb.set_trace()
         rgb_keys = list()
         low_dim_keys = list()
         key_model_map = nn.ModuleDict()
@@ -131,7 +130,7 @@ class TimmObsEncoder(ModuleAttrMixin):
                     num_groups=(x.num_features // 16) if (x.num_features % 16 == 0) else (x.num_features // 8), 
                     num_channels=x.num_features)
             )
-        # pdb.set_trace
+
         image_shape = None
         obs_shape_meta = shape_meta['obs']
         for key, attr in obs_shape_meta.items():

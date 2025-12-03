@@ -933,60 +933,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         del obs_dict['robot0_eef_quat']
                         del obs_dict['robot0_gripper_qpos']
                     if self.choose_sample and self.start_sampling<env_step_index<self.end_sampling:
-                        sample_number=50
-                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(sample_number, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
+                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(self.num_samples, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
                         action_dict = policy.predict_action(reshaped_obs_dict)[0] #action outputs are batch_sizex8x7
-                        oversampled_actions = action_dict['action_pred'].view(-1, sample_number, 16, 7).detach().to('cpu').numpy()
-
-                        # #choosing based on variance
-                        # mean = np.mean(oversampled_actions, axis=(1),keepdims=True)  # Shape: (batch_size, 100)
-                        # stds = np.abs(oversampled_actions-mean)
-                        # interval = (stds.shape[1] // self.num_samples) - 1
-                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
-                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
-                        # batch_indices = np.arange(oversampled_actions.shape[0])[:, None]
-                        # actions = oversampled_actions[batch_indices, top_n_indices]
-                        # print('var before:', np.sum(np.var(oversampled_actions,axis=1)),'var after:', np.sum(np.var(actions,axis=1)))
-
-                        B, N, H, W = oversampled_actions.shape  # 50, 25, 16, 7
-                        oversampled_actions=torch.tensor(oversampled_actions)
-                        flat = oversampled_actions.view(B, N, -1)  # (50, 25, 112)
-                        
-                        selected_indices = []
-
-                        for b in range(B):
-                            samples = flat[b]  # (25, 112)
-                            dist_matrix = torch.cdist(samples, samples, p=2)  # (25, 25)
-
-                            # Start with the one that has the largest mean distance to others
-                            avg_dists = dist_matrix.mean(dim=1)
-                            idx = torch.argmax(avg_dists).item()
-                            selected = [idx]
-
-                            # Greedily add k-1 samples that maximize min distance to current set
-                            while len(selected) < self.num_samples:
-                                remaining = list(set(range(N)) - set(selected))
-                                min_dists = []
-                                for r in remaining:
-                                    dists_to_selected = dist_matrix[r, selected]
-                                    min_dists.append((r, dists_to_selected.min().item()))
-                                # Pick the one with the maximum min distance
-                                next_idx = max(min_dists, key=lambda x: x[1])[0]
-                                selected.append(next_idx)
-
-                            selected_indices.append(torch.tensor(selected))
-
-                        selected_indices = torch.stack(selected_indices)  # (50, 5)
-                        # Gather the selected samples
-                        batch_indices = torch.arange(B).unsqueeze(1).expand(-1, self.num_samples)
-                        selected_samples = oversampled_actions[batch_indices, selected_indices]  # (50, 5, 16, 7)
-
-
-                        oversampled_actions=oversampled_actions.numpy()
-                        actions=selected_samples.numpy()
-
-                        # actions=oversample,d_actions
-                        print('action var:', np.sum(np.var(actions,axis=1)))
+                        actions = action_dict['action_pred'].view(-1, self.num_samples, 16, 7).detach().to('cpu').numpy()
+                        print('action var:', np.mean(np.var(actions,axis=1)))
 
                         add_on = np.tile([0., -0.,  0.,  0., -1.], (actions.shape[0], actions.shape[1], actions.shape[2], 1))
                         extended_env_action = np.concatenate((actions, add_on), axis=-1)

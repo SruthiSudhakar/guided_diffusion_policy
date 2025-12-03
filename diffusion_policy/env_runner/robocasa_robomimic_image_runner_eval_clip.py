@@ -65,9 +65,9 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import CLIPTokenizer, CLIPModel
 import torch
 # Load the CLIP model and tokenizer
-clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
-clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
-clip_model = CLIPModel.from_pretrained(clip_model_name)
+# clip_model_name = "openai/clip-vit-base-patch32"  # You can choose other models if desired
+# clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+# clip_model = CLIPModel.from_pretrained(clip_model_name)
 
 import math
 from collections import defaultdict
@@ -481,7 +481,7 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
 
     return best_indices, raw_results #, sorted_orders
 
-class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
+class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
     """
     Robomimic envs already enforces number of steps.
     """
@@ -532,13 +532,18 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             wm_guidance=7.0,
             wm_num_sampling_steps=10,
             wm_seed=0,
-            num_actions_to_execute=8,
+            num_actions_to_execute=None,
+            clip_model_name="openai/clip-vit-base-patch32",
         ):
         super().__init__(output_dir)
         n_obs_steps=8 if save_stuff else n_obs_steps
         self.object = object
         if n_envs is None:
             n_envs = n_train + n_test
+
+        self.clip_model_name = clip_model_name
+        self.clip_tokenizer = CLIPTokenizer.from_pretrained(clip_model_name)
+        self.clip_model = CLIPModel.from_pretrained(clip_model_name)
 
         # assert n_obs_steps <= n_action_steps
         dataset_path = os.path.expanduser(dataset_path)
@@ -637,7 +642,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         env_init_fn_dills = list()
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        clip_model.to(device)
+        self.clip_model.to(device)
         train_embeddings_list =[]
         batch_size = 128  # You can adjust this based on your memory capacity
         # first compute clip embeddings quickly
@@ -649,10 +654,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     ep_meta = f[f'data/demo_{ex}'].attrs.get("ep_meta", None)
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
-                inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                inputs = self.clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
                 inputs = {key: value.to(device) for key, value in inputs.items()}
                 with torch.no_grad():
-                    batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                    batch_embeddings = self.clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
                     batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
         
                 # Append the embeddings to the list
@@ -669,10 +674,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         text = json.loads(ep_meta)['lang']
                         texts_batch.append(text)
                         batch_indices.append(train_idx)            
-                    inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                    inputs = self.clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
                     inputs = {key: value.to(device) for key, value in inputs.items()}
                     with torch.no_grad():
-                        batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                        batch_embeddings = self.clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
                         batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
             
                     # Append the embeddings to the list
@@ -714,6 +719,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.env_model = None
                     env.env.env.ep_meta = None
                     env.env.env.language_goal = None
+                    env.env.env.task_description = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
                             'trainmedia', str(train_idx) + "_" + str(train_start_idx + i) + "_" + wv.util.generate_id() + ".mp4")
@@ -727,6 +733,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
                     env.env.env.language_goal = language_goal_embedding
+                    env.env.env.task_description = language_goal_embedding
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
                     # env.env.env.env.env.hard_reset=False
@@ -748,10 +755,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     text = json.loads(ep_meta)['lang']
                     texts_batch.append(text)
                     batch_indices.append(test_idx)            
-                inputs = clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
+                inputs = self.clip_tokenizer(texts_batch, padding=True, return_tensors="pt")
                 inputs = {key: value.to(device) for key, value in inputs.items()}
                 with torch.no_grad():
-                    batch_embeddings = clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
+                    batch_embeddings = self.clip_model.get_text_features(**inputs)  # Shape: (batch_size, embedding_dim)
                     batch_embeddings = batch_embeddings.cpu().numpy()  # Move back to CPU and convert to NumPy
                 test_embeddings_list.extend(batch_embeddings)  # Collect all the embeddings
         #test
@@ -811,6 +818,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     env.env.env.env_model = None
                     env.env.env.ep_meta = None
                     env.env.env.language_goal = None
+                    env.env.env.task_description = None
                     if enable_render:
                         filename = pathlib.Path(output_dir).joinpath(
                             'testmedia', str(test_idx) + "_" + str(train_start_idx + i) + "_" + wv.util.generate_id() + ".mp4")
@@ -828,6 +836,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         env.env.env.env_model = env_model
                     env.env.env.ep_meta = ep_meta
                     env.env.env.language_goal = language_goal_embedding
+                    env.env.env.task_description = language_goal_embedding
                     env.seed(seed)
                     env.env.env.env.env.hard_reset=True
                     env.env.env.reset()
@@ -963,6 +972,13 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             pickle.dump(save_data, f)
 
     def run(self, policy: BaseImagePolicy, classifier_processor=None, classifier=None, grad_steps=None, guidance_scale=None, guided_towards=None):
+        if self.num_actions_to_execute is None:
+            if 'action_horizon' in policy.__dict__:
+                self.num_actions_to_execute = policy.action_horizon
+            elif 'n_action_steps' in policy.__dict__:
+                self.num_actions_to_execute = policy.n_action_steps
+            else:
+                raise ValueError('num_actions_to_execute must be specified')
         device = policy.device
         dtype = policy.dtype
         env = self.env
@@ -1028,6 +1044,11 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 
                 # device transfer
                 obs_dict = dict_apply(np_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
+                # Fix shape mismatch by slicing task_description to T=1
+                if 'task_description' in obs_dict:
+                    obs_dict['task_description'] = obs_dict['task_description'][:, -1:]
+                elif 'language_goal' in obs_dict:
+                    pdb.set_trace()
 
                 # Reseed RNGs before each policy prediction to get stochastic diffusion samples
                 # while keeping environment conditions deterministic
@@ -1074,9 +1095,14 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             sd_sample_obs.append(obs)
 
                             for extra_step in range(self.additional_steps):
-                                step2_obs_dict={'language_goal': obs_dict['language_goal'].cpu().numpy()}
+                                if 'language_goal' in obs_dict:
+                                    step2_obs_dict={'language_goal': obs_dict['language_goal'].cpu().numpy()}
+                                elif 'task_description' in obs_dict:
+                                    step2_obs_dict={'task_description': obs_dict['task_description'].cpu().numpy()}
+                                else:
+                                    raise Exception("No language goal or task description in obs_dict")
                                 for key in reshaped_obs_dict.keys():
-                                    if key=='language_goal':
+                                    if key=='language_goal' or key=='task_description':
                                         continue
                                     step2_obs_dict[key] = np.stack([np.stack([one_env_obs_step[key] for one_env_obs_step in one_env_obs[-2:]]) for one_env_obs in processed_obs])
                                 step2_obs_dict = dict_apply(step2_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
@@ -1121,14 +1147,20 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         actions=actions[np.arange(actions.shape[0]), best_action_indices, :self.num_actions_to_execute, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
                     else:
-                        print(f'step: {env_step_index}')
-                        action_dict, classifier_action_pred = policy.predict_action(obs_dict)
-                        """
-                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(100, dim=0)) 
-                        temp=policy.predict_action(reshaped_obs_dict)[0]['action']
-                        temp=temp.view(-1,100,8,7)
-                        for idx in range(6): print('idx:',idx,temp[idx].var(dim=0).mean())
-                        """
+                        print(f'step: {env_step_index}') 
+                        # Handle different policy output formats
+                        policy_output = policy.predict_action(obs_dict)
+                        classifier_action_pred = None
+                        if isinstance(policy_output, tuple):
+                            action_dict, classifier_action_pred = policy_output
+                        elif isinstance(policy_output, dict):
+                            action_dict = policy_output
+                        else:
+                            action_dict = {'action': policy_output}
+                        
+                        if 'action' not in action_dict and 'action_pred' in action_dict:
+                             action_dict['action'] = action_dict['action_pred']
+
                 # device_transfer
                 np_action_dict = dict_apply(action_dict,lambda x: x.detach().to('cpu').numpy())
 
@@ -1153,6 +1185,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 add_on = np.tile([0., -0.,  0.,  0., -1.], (env_action.shape[0], env_action.shape[1], 1))
                 extended_env_action = np.concatenate((env_action, add_on), axis=-1)
                 # start=time.time()
+                pdb.set_trace()
                 obs, reward, done, info = env.step(extended_env_action)
                 # end=time.time()
                 # print(colored(f'env step time: {end - start}','green'))

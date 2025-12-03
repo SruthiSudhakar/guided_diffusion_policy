@@ -202,7 +202,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         else:
             output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}'
         if os.path.exists(output_dir):
-            click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
+            sys.exit(f"Output path {output_dir} already exists! Exiting.")
         pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
         print(colored(f'saving to: f{output_dir}', 'green'))
         

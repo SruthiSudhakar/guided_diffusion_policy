@@ -1,5 +1,5 @@
 import copy
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
 import os
 from datetime import datetime
@@ -112,7 +112,6 @@ class InMemoryVideoDataset(Dataset):
         self,
         frame_width: int,
         frame_height: int,
-        tasks: dict,
         skip_demos: dict,
         sample_fps: float,
         video_fps: float,
@@ -125,7 +124,7 @@ class InMemoryVideoDataset(Dataset):
         lang_model: nn.Module,
         mode: str,
         data_fraction: float,
-        human_path: Optional[str] = None,
+        human_path: Optional[Any] = None,
     ):
         super().__init__()
 
@@ -133,7 +132,7 @@ class InMemoryVideoDataset(Dataset):
             raise ValueError(f"Invalid mode '{mode}'. Must be 'train', 'val' or 'test'.")
         
         self.mode = mode
-        self.validation_split = validation_split    # use the last 2000 subsamples as validation
+        self._validation_split_arg = validation_split # Store arg to process later
 
         self.frame_width = frame_width
         self.frame_height = frame_height
@@ -148,30 +147,18 @@ class InMemoryVideoDataset(Dataset):
 
         # Handle different types of human_path input
         self.human_path = human_path
-        if self.human_path is None or self.human_path == "None":
-            self.human_path = 'datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5'
+
+        # if self.human_path is None or self.human_path == "None":
+        #     self.human_path = 'datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im256.hdf5'
         
         # Convert OmegaConf DictConfig to regular dict if needed
         from omegaconf import DictConfig, ListConfig
-        if isinstance(self.human_path, (DictConfig, ListConfig)):
+        try:
+            assert isinstance(self.human_path, (DictConfig, ListConfig))
             import omegaconf
             self.human_path = omegaconf.OmegaConf.to_container(self.human_path)
-        
-        # Convert to standardized format (dict mapping task to path)
-        if isinstance(self.human_path, str):
-            # Single path for all tasks
-            self.human_paths = {task: self.human_path for task in tasks.keys()}
-        elif isinstance(self.human_path, list):
-            # List of paths - map to tasks in order
-            task_list = list(tasks.keys())
-            if len(self.human_path) != len(task_list):
-                raise ValueError(f"Number of paths ({len(self.human_path)}) must match number of tasks ({len(task_list)})")
-            self.human_paths = {task: path for task, path in zip(task_list, self.human_path)}
-        elif isinstance(self.human_path, dict):
-            # Already in the desired format
-            self.human_paths = self.human_path
-        else:
-            raise ValueError(f"human_path must be a string, list, or dict, got {type(self.human_path)}")
+        except AssertionError:
+            raise ValueError(f"human_path must be a dict, got {type(self.human_path)}")
 
         # self.clip_mean = [0.48145466, 0.4578275, 0.40821073]
         # self.clip_std = [0.26862954, 0.26130258, 0.27577711]
@@ -200,10 +187,12 @@ class InMemoryVideoDataset(Dataset):
                 T.CenterCrop(size=(self.frame_height, self.frame_width)),
                 # T.Normalize(mean=self.clip_mean, std=self.clip_std),
             ])
-        self.task_list = list(tasks.keys())
+
+        self.task_list = list(self.human_path.keys())
         print("Task list:", self.task_list)
-        print("Loading datasets from paths:", self.human_paths)
-        self.datasets, self.hdf5_datasets = self.get_dataset_file(self.task_list, self.human_paths)
+        print("Loading datasets from paths:", self.human_path)
+
+        self.datasets, self.hdf5_datasets = self.get_dataset_file(self.task_list, self.human_path)
         self.indexed_demos = []
         for task_index, task_name in enumerate(self.task_list):
 
@@ -229,6 +218,13 @@ class InMemoryVideoDataset(Dataset):
                 if added_demos > max_demos:
                     break  # Stop once enough demos are added
 
+        # Calculate validation split based on total indexed demos
+        if self._validation_split_arg < 1.0:
+            self.validation_split = int(len(self.indexed_demos) * self._validation_split_arg)
+        else:
+            self.validation_split = int(self._validation_split_arg)
+        print(f"Validation split: {self.validation_split} (from arg {self._validation_split_arg})")
+
         all_relative_actions = []
 
         for task_index, task_name in enumerate(self.task_list):
@@ -251,9 +247,6 @@ class InMemoryVideoDataset(Dataset):
 
         self.min = np.ones((1, 7), dtype=np.float32) * -1
         self.max = np.ones((1, 7), dtype=np.float32)
-
-        print(self.min)
-        print(self.max)
 
     def load_hdf5_into_memory(self, h5_file):
         """Load an HDF5 file into memory as a dictionary."""
@@ -365,7 +358,8 @@ class InMemoryVideoDataset(Dataset):
 
         if self.mode == 'val':
             i += len(self.indexed_demos) - self.validation_split
-
+        elif self.mode == 'train':
+            assert i < len(self.indexed_demos) - self.validation_split
         try:
             task_name, task_index, demo_key, demo_step, clip_embedding = self.indexed_demos[i]
             # relative_actions_abs = self.datasets[task_index]['data'][demo_key]['relative_actions_abs'][demo_step:demo_step+self.pred_horizon*self.stride:self.stride]
@@ -436,6 +430,19 @@ class InMemoryVideoDataset(Dataset):
             "action": relative_actions_abs_normalized,
         }
     
+    def get_validation_dataset(self):
+        val_dataset = copy.copy(self)
+        val_dataset.mode = 'val'
+        val_dataset.transform_rgb = T.Compose([
+            T.CenterCrop(size=(self.frame_height, self.frame_width)),
+            # T.Normalize(mean=self.clip_mean, std=self.clip_std),
+        ])
+        val_dataset.transform_depth = T.Compose([
+            T.CenterCrop(size=(self.frame_height, self.frame_width)),
+            # T.Normalize(mean=self.clip_mean, std=self.clip_std),
+        ])
+        return val_dataset
+
     def __len__(self):
         if self.mode == 'train':
             return len(self.indexed_demos) - self.validation_split

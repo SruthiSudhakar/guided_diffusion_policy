@@ -78,3 +78,5 @@ cd externals/gym
 pip install -e .
 cd ../../
 pip install bitsandbytes
+git config --global --add safe.directory /app
+pip install open_clip_torch

@@ -7,83 +7,23 @@ export MUJOCO_GL=osmesa
 export HYDRA_FULL_ERROR=1
 
 Usage:
-    
-python openvla_eval.py --checkpoint data/outputs/ss_train_diffusion_unet_clip_PnPSinkToCounter/base_policy/checkpoints/epoch=0900-train_loss=0.010.ckpt \
 
-python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --device cuda:1 \
-    --robocasa \
+python final_eval_branching.py \
+    --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
+    --device cuda:5 \
     --change_test_textures \
     --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 21 \
-    --specific_train_exs 39,39,39,39,39,39,39,39,39,39,42,42,42,42,42,42,42,42,42,42 \
+    --n_envs 1 \
+    --specific_train_exs 0 \
     --n_test 1 \
     --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir sep25
+    --max_steps 16 \
+    --num_samples 2 \
+    --prefix_dir oct29_branching
 
-python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/checkpoint-5000 \
-    --device cuda:2 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 21 \
-    --specific_train_exs 2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir sep25
-
-python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/checkpoint-5000 \
-    --device cuda:3 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 6 \
-    --specific_train_exs 2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --choose_sample \
-    --num_samples 10 \
-    --additional_steps 9 \
-    --end_sampling 5 \
-    --prefix_dir sep29llm
-
-python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/checkpoint-5000 \
-    --device cuda:2 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 2 \
-    --specific_train_exs 2 \
-    --n_test 1 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --choose_sample \
-    --num_samples 10 \
-    --additional_steps 9 \
-    --end_sampling 5 \
-    --prefix_dir test
-
-
-python openvla_eval.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/checkpoint-5000 \
-    --device cuda:2 \
-    --robocasa \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 8 \
-    --specific_train_exs 2,39,42,110,146,214,241 \
-    --n_test 1 \
-    --start_rollout_from_state 0 \
-    --max_steps 200 \
-    --prefix_dir oct12
-
---specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
+PnPSinkToCounter_Human_fixed_textures
+--specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247
 
 """
 #   
@@ -161,7 +101,6 @@ class SimpleClassifier(nn.Module):
 @click.option('-add', '--add', default='')
 @click.option('-prefix_dir', '--prefix_dir', default='')
 @click.option('-save', '--save', is_flag=True)
-@click.option('-robocasa', '--robocasa', is_flag=True)
 @click.option('-change_test_textures', '--change_test_textures', is_flag=True)
 @click.option('-change_test_objects', '--change_test_objects', is_flag=True)
 @click.option('-change_test_object_instances', '--change_test_object_instances', is_flag=True)
@@ -175,12 +114,12 @@ class SimpleClassifier(nn.Module):
 @click.option('-decode_first', '--decode_first', is_flag=False)
 @click.option('-start_sampling', '--start_sampling', default=0)
 @click.option('-end_sampling', '--end_sampling', default=27)
-@click.option('-additional_steps', '--additional_steps', default=0)
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-llm_path', '--llm_path', default='/app/data/checkpoints/llm_checkpoints/checkpoint-400', help='Path to the base LLM repository')
+@click.option('-num_actions_to_execute', '--num_actions_to_execute', default=8, help='num actions to execute from prediction horizon')
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, robocasa, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, specific_train_exs,prompt_with_video, llm_path, num_actions_to_execute):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -231,7 +170,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         else:
             output_dir+=f'{prefix_dir}/{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_{add}'
         if os.path.exists(output_dir):
-            click.confirm(f"Output path {output_dir} already exists! Overwrite?", abort=True)
+            sys.exit(f"Output path {output_dir} already exists! Exiting.")
         pathlib.Path(output_dir).mkdir(parents=True, exist_ok=True)
         print(colored(f'saving to: f{output_dir}', 'green'))
         
@@ -244,8 +183,9 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 'change_test_textures', change_test_textures, 'change_test_object_instances', \
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
-                'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs', \
-                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path]
+                'start sampling', start_sampling, 'end sampling', end_sampling, 'specific_train_exs', \
+                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, \
+                ]
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -255,12 +195,8 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             
         with open_dict(cfg):
 
-            if robocasa:
-                cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval.RobocasaRobomimicImageRunnerEval'
-                cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
-                # cfg['task']['env_runner']['render_obs_key'] = 'robot0_robotview' if 'mg' in dataset_path else 'robot0_agentview_left_image'
-            else:
-                cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robomimic_image_runner_eval.RobomimicImageRunnerEval'
+            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_new_branching.RobocasaRobomimicImageRunnerEval'
+            cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
 
             # Copy shape_meta from task level to env_runner level if it exists at task level
             if 'shape_meta' in cfg['task'] and 'shape_meta' not in cfg['task']['env_runner']:
@@ -285,10 +221,8 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['decode_first']=decode_first
             cfg['task']['env_runner']['start_sampling']=start_sampling
             cfg['task']['env_runner']['end_sampling']=end_sampling
-            cfg['task']['env_runner']['additional_steps']=additional_steps
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
-            cfg['task']['env_runner']['llm_path']=llm_path
 
             cfg['task']['dataset_path'] = dataset_path
             cfg['task']['env_runner']['dataset_path'] = dataset_path

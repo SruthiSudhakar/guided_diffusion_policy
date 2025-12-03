@@ -463,16 +463,17 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
     # sorted_orders = []  # New list to store the sorted order of samples
     for env_idx in range(n_envs_local):
         ratings = env_ratings[env_idx]
-        best_idx = int(np.argmax(ratings))
+        # Check if all ratings are equal and choose randomly if so
+        if len(set(ratings)) == 1:
+            best_idx = np.random.randint(0, len(ratings))
+            print(f"  WARNING: All ratings are equal ({ratings[0]:.2f}) - randomly selected index {best_idx}!")
+        else:
+            best_idx = int(np.argmax(ratings))
         best_indices.append(best_idx)
         raw_results.append(ratings)
 
         # Debug: Print ratings for this environment
         print(f"Env {env_idx} ratings: {[f'{r:.2f}' for r in ratings]}, best_idx={best_idx}")
-
-        # Check if all ratings are equal (which would default to index 0)
-        if len(set(ratings)) == 1:
-            print(f"  WARNING: All ratings are equal ({ratings[0]:.2f}) - defaulting to index 0!")
 
         # # Get sorted order from best to worst (descending order of ratings)
         # sorted_indices = np.argsort(ratings)[::-1].tolist()  # Sort descending
@@ -1045,60 +1046,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         del obs_dict['robot0_eef_quat']
                         del obs_dict['robot0_gripper_qpos']
                     if self.choose_sample and self.start_sampling<env_step_index<self.end_sampling:
-                        sample_number=50
-                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(sample_number, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
+                        reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(self.num_samples, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
                         action_dict = policy.predict_action(reshaped_obs_dict)[0] #action outputs are batch_sizex8x7
-                        oversampled_actions = action_dict['action_pred'].view(-1, sample_number, 16, 7).detach().to('cpu').numpy()
-
-                        # #choosing based on variance
-                        # mean = np.mean(oversampled_actions, axis=(1),keepdims=True)  # Shape: (batch_size, 100)
-                        # stds = np.abs(oversampled_actions-mean)
-                        # interval = (stds.shape[1] // self.num_samples) - 1
-                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
-                        # top_n_indices = np.argsort(np.sum(stds,axis=(2,3)), axis=1)[:, ::interval][:, :self.num_samples]
-                        # batch_indices = np.arange(oversampled_actions.shape[0])[:, None]
-                        # actions = oversampled_actions[batch_indices, top_n_indices]
-                        # print('var before:', np.sum(np.var(oversampled_actions,axis=1)),'var after:', np.sum(np.var(actions,axis=1)))
-
-                        B, N, H, W = oversampled_actions.shape  # 50, 25, 16, 7
-                        oversampled_actions=torch.tensor(oversampled_actions)
-                        flat = oversampled_actions.view(B, N, -1)  # (50, 25, 112)
-                        
-                        selected_indices = []
-
-                        for b in range(B):
-                            samples = flat[b]  # (25, 112)
-                            dist_matrix = torch.cdist(samples, samples, p=2)  # (25, 25)
-
-                            # Start with the one that has the largest mean distance to others
-                            avg_dists = dist_matrix.mean(dim=1)
-                            idx = torch.argmax(avg_dists).item()
-                            selected = [idx]
-
-                            # Greedily add k-1 samples that maximize min distance to current set
-                            while len(selected) < self.num_samples:
-                                remaining = list(set(range(N)) - set(selected))
-                                min_dists = []
-                                for r in remaining:
-                                    dists_to_selected = dist_matrix[r, selected]
-                                    min_dists.append((r, dists_to_selected.min().item()))
-                                # Pick the one with the maximum min distance
-                                next_idx = max(min_dists, key=lambda x: x[1])[0]
-                                selected.append(next_idx)
-
-                            selected_indices.append(torch.tensor(selected))
-
-                        selected_indices = torch.stack(selected_indices)  # (50, 5)
-                        # Gather the selected samples
-                        batch_indices = torch.arange(B).unsqueeze(1).expand(-1, self.num_samples)
-                        selected_samples = oversampled_actions[batch_indices, selected_indices]  # (50, 5, 16, 7)
-
-
-                        oversampled_actions=oversampled_actions.numpy()
-                        actions=selected_samples.numpy()
-
-                        # actions=oversample,d_actions
-                        print('action var:', np.sum(np.var(actions,axis=1)))
+                        actions = action_dict['action_pred'].view(-1, self.num_samples, 16, 7).detach().to('cpu').numpy()
+                        print('action var:', np.mean(np.var(actions,axis=1)))
 
                         add_on = np.tile([0., -0.,  0.,  0., -1.], (actions.shape[0], actions.shape[1], actions.shape[2], 1))
                         extended_env_action = np.concatenate((actions, add_on), axis=-1)
@@ -1115,10 +1066,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             for key in ['robot0_agentview_left_image', 'robot0_agentview_right_image', 'robot0_eye_in_hand_image']:
                                 current_obs[idx][key] = current_obs[idx][key][::-1, :, :]  # Flip along height axis (C, H, W) format
 
-                        pbar2=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
+                        # When num_samples is 0, still run the loop once to do hallucination with the single action
+                        num_iterations = max(1, self.num_samples)
+                        pbar2=tqdm.tqdm(range(num_iterations), desc="Trying diff action samples")
                         aggregated_obs = []
                         for sample_idx in pbar2:
-                            pbar2.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
+                            pbar2.set_description(f"step: {env_step_index} sampling {sample_idx}/{num_iterations}")
                             self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
                             results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
                             obs = [r[0] for r in results]  # temp_observations from each env
@@ -1166,9 +1119,16 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         best_action_indices, raw_results = self.PROMPTS['call_function'](videos, self.llm, self.processor,n_envs,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
                         # print('sorted orders (best to worst):', sorted_orders)
+                        # Handle raw_results formatting based on its structure
+                        if isinstance(raw_results, (list, tuple)) and len(raw_results) > 0 and isinstance(raw_results[0], (list, tuple)):
+                            formatted_raw_results = [[str(subitem) for subitem in item] for item in raw_results]
+                        else:
+                            # If raw_results is a single value or different structure, wrap it appropriately
+                            formatted_raw_results = [[str(raw_results)]] if self.num_samples == 0 else [[str(item)] for item in raw_results] if isinstance(raw_results, (list, tuple)) else [[str(raw_results)]]
+
                         chunk_step_actions[chunk_idx][env_step_index]={
-                            'best_action_indices':[str(x) for x in best_action_indices], 
-                            'raw_results': [[str(subitem) for subitem in item] for item in raw_results]
+                            'best_action_indices':[str(x) for x in best_action_indices],
+                            'raw_results': formatted_raw_results
                             # 'sorted_orders': [[str(idx) for idx in order] for order in sorted_orders]
                         }
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
@@ -1335,6 +1295,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     max_reward = np.max(all_rewards[i])
                     max_rewards[prefix].append(max_reward)
                     log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+                    log_data[prefix+f'sim_reward_trajectory_{seed}'] = all_rewards[i].tolist() if isinstance(all_rewards[i], np.ndarray) else list(all_rewards[i])
                     if classifier and self.show_classifier_scores:
                         log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
                         # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))
@@ -1388,6 +1349,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             max_reward = np.max(all_rewards[i])
             max_rewards[prefix].append(max_reward)
             log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+            log_data[prefix+f'sim_reward_trajectory_{seed}'] = all_rewards[i].tolist() if isinstance(all_rewards[i], np.ndarray) else list(all_rewards[i])
             if classifier and self.show_classifier_scores:
                 log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
                 # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))

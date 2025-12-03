@@ -8,89 +8,18 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:3 \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 10 \
-    --specific_train_exs 100,110,153,154,156,164,182,183,214 \
-    --n_test 1 \
-    --prefix_dir oct20
-    
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:0 \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 6 \
-    --specific_train_exs 2,42,110,136,214 \
-    --n_test 1 \
-    --choose_sample \
-    --num_samples 2 \
-    --additional_steps 3 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir oct31
-
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
+python final_eval_clip_policy.py --checkpoint data/outputs/dec2/2025.12.02/22.03.56_train_diffusion_unet_clip/checkpoints/epoch=0100-train_loss=0.023.ckpt \
     --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
     --device cuda:4 \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 42 \
-    --specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247 \
-    --n_test 1 \
-    --choose_sample \
-    --num_samples  \
-    --additional_steps 0 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir oct31_steering_8steps_samples
-
-
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:3 \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 42 \
-    --specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247 \
-    --n_test 1 \
-    --choose_sample \
-    --num_samples 2 \
-    --additional_steps 0 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir oct31_steering_8steps_2samples
-
-
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:6 \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
+    --list_dataset_path PnPSinkToCounter_expert_fixed_224 \
     --n_envs 2 \
-    --specific_train_exs 110 \
+    --n_train 1 \
     --n_test 1 \
-    --choose_sample \
-    --num_samples 2 \
-    --additional_steps 0 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
     --prefix_dir test
 
-PnPSinkToCounter_mg_val_kbpckt_firsthalf
---specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247 \
---specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
-PnPSinkToCounter_Human_fixed_textures
---specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247
-
 """
-#   
-# /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
 import sys
-# use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
@@ -112,37 +41,15 @@ from data.dgx_data_registery import DATASETS
 from termcolor import colored
 import time
 import numpy as np
-# import tensorflow as tf
 from PIL import Image
-# from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
-# from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
-# from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
-# from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
-# from experiments.robot.openvla_utils import get_processor
-# from experiments.robot.robot_utils import ( get_action, get_image_resize_size, get_model,)
-# from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from types import SimpleNamespace
 import torch
 import torch.nn as nn
 import torch.optim as optim
-# from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
-class SimpleClassifier(nn.Module):
-    def __init__(self, input_dim=65):
-        super(SimpleClassifier, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)            
-        )
-
-    def forward(self, x):
-        return self.model(x)
 
 @click.command()
 @click.option('-checkpoint', '--checkpoint', required=True)
@@ -179,7 +86,7 @@ class SimpleClassifier(nn.Module):
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-llm_path', '--llm_path', default='/app/data/checkpoints/llm_checkpoints/checkpoint-400', help='Path to the base LLM repository')
-@click.option('-num_actions_to_execute', '--num_actions_to_execute', default=8, help='num actions to execute from prediction horizon')
+@click.option('-num_actions_to_execute', '--num_actions_to_execute', default=None, help='num actions to execute from prediction horizon')
 
 def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, num_actions_to_execute):
     # Extract the value for task.dataset_path
@@ -246,7 +153,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
                 'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs', \
-                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file', 'final_eval_judgeexec.py']
+                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file','final_eval.py']
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -256,7 +163,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             
         with open_dict(cfg):
 
-            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_new_judgeexec.RobocasaRobomimicImageRunnerEval'
+            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_new.RobocasaRobomimicImageRunnerEval'
             cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
 
             # Copy shape_meta from task level to env_runner level if it exists at task level
@@ -299,6 +206,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['n_envs'] = int(n_envs)
             if test_start_seed:
                 cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
+            cfg['task']['env_runner']['clip_model_name'] = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 
 
         cls = hydra.utils.get_class(cfg._target_)

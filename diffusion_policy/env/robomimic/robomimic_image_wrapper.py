@@ -19,6 +19,7 @@ class RobomimicImageWrapper(gym.Env):
         env_model: Optional[str]=None,
         ep_meta: Optional[str]=None,
         language_goal: Optional[str]=None,
+        task_description: Optional[str]=None,
         render_obs_key='agentview_image',
         ):
 
@@ -28,6 +29,7 @@ class RobomimicImageWrapper(gym.Env):
         self.env_model = env_model
         self.ep_meta = ep_meta
         self.language_goal = language_goal
+        self.task_description = task_description
         self.seed_state_map = dict()
         self._seed = None
         self.shape_meta = shape_meta
@@ -62,6 +64,8 @@ class RobomimicImageWrapper(gym.Env):
                 #pdb.set_trace()
                 #TODO: is this the right range we should apply for the language goal??
                 min_value, max_value = 0, 1
+            elif key == 'task_description':
+                min_value, max_value = 0, 1
             else:
                 raise RuntimeError(f"Unsupported type {key}")
             
@@ -84,11 +88,60 @@ class RobomimicImageWrapper(gym.Env):
         obs = dict()
         for key in self.observation_space.keys():
             if key in self.render_obs_key and self.observation_space[key].shape!=raw_obs[key].shape:
-                resize_shape=self.observation_space[key].shape[1:]
-                obs[key]=cv2.resize(raw_obs[key].transpose(1,2,0), resize_shape, interpolation=cv2.INTER_AREA).transpose(2,0,1)
+                target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
+                img = raw_obs[key]
+                if img.shape[2] == 3: # HWC
+                    pass
+                elif img.shape[0] == 3: # CHW
+                    img = img.transpose(1, 2, 0)
+                obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
             elif key=='language_goal':
                 #TODO: what if we change the language goal? this should not return the old language goal then.
                 obs[key] = self.language_goal
+            elif key=='task_description':
+                obs[key] = self.task_description
+            elif key == 'left_image':
+                # Map left_image to robot0_agentview_left_image
+                # Ensure we resize if necessary, similar to other images
+                source_key = 'robot0_agentview_left_image'
+                if self.observation_space[key].shape != raw_obs[source_key].shape:
+                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
+                    img = raw_obs[source_key]
+                    if img.shape[2] == 3: # HWC
+                        pass
+                    elif img.shape[0] == 3: # CHW
+                        img = img.transpose(1, 2, 0)
+                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
+                else:
+                    obs[key] = raw_obs[source_key]
+            elif key == 'right_image':
+                # Map left_image to robot0_agentview_left_image
+                # Ensure we resize if necessary, similar to other images
+                source_key = 'robot0_agentview_right_image'
+                if self.observation_space[key].shape != raw_obs[source_key].shape:
+                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
+                    img = raw_obs[source_key]
+                    if img.shape[2] == 3: # HWC
+                        pass
+                    elif img.shape[0] == 3: # CHW
+                        img = img.transpose(1, 2, 0)
+                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
+                else:
+                    obs[key] = raw_obs[source_key]
+            elif key == 'gripper_image':
+                # Map left_image to robot0_agentview_left_image
+                # Ensure we resize if necessary, similar to other images
+                source_key = 'robot0_eye_in_hand_image'
+                if self.observation_space[key].shape != raw_obs[source_key].shape:
+                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
+                    img = raw_obs[source_key]
+                    if img.shape[2] == 3: # HWC
+                        pass
+                    elif img.shape[0] == 3: # CHW
+                        img = img.transpose(1, 2, 0)
+                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
+                else:
+                    obs[key] = raw_obs[source_key]
             else:
                 obs[key] = raw_obs[key]
         return obs
@@ -148,8 +201,18 @@ class RobomimicImageWrapper(gym.Env):
     def render(self, mode='rgb_array'):
         if self.render_cache is None:
             raise RuntimeError('Must run reset or step before render.')
-        img = [(np.moveaxis(x, 0, -1)* 255).astype(np.uint8) for x in self.render_cache]
-        return img
+        
+        images = []
+        for x in self.render_cache:
+            if x.shape[0] == 3: # CHW
+                x = np.moveaxis(x, 0, -1)
+            
+            if x.dtype == np.float32 or x.dtype == np.float64:
+                x = (x * 255).astype(np.uint8)
+            
+            images.append(x)
+            
+        return images
 
     def is_grasping(self):
         '''

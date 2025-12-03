@@ -2,7 +2,7 @@ name: none
 # name: test
 
 img_obs_horizon: 2
-action_horizon: 32
+action_horizon: 16
 action_dim: 7
 ignore_proprioception: True
 
@@ -41,7 +41,7 @@ pose_repr: &pose_repr
   action_pose_repr: relative # abs or rel or delta
 
 env_runner:
-  _target_: diffusion_policy.env_runner.real_pusht_image_runner.RealPushTImageRunner
+  _target_: diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_clip.RobocasaRobomimicImageRunnerEvalClip
 
 lang_model:
   _target_: diffusion_policy.model.vision.clip_obs_encoder.FrozenOpenCLIPImageEmbedder
@@ -54,7 +54,7 @@ dataset:
   video_fps: 30
   pred_horizon: ${task.action_horizon}
   obs_horizon: ${task.img_obs_horizon}
-  validation_split: 0
+  validation_split: 0.1
   action_dim: ${task.action_dim}
   swap_rgb: false
   mode: "train"
@@ -76,12 +76,12 @@ dataset:
   #   PnPCabToCounter: "path/to/pnp.hdf5"
   
   human_path:
-    CloseDrawer: "externals/robocasa/datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im224.hdf5"
-    PnPSinkToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/expert_demos_fixed_textures_224.hdf5"
-    PnPStoveToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams_im224.hdf5"
-    PnPCabToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im224.hdf5"
-    CoffeeServeMug: "externals/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5"
-    PnPCounterToSink: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5"
+    # CloseDrawer: "externals/robocasa/datasets/v0.1/single_stage/kitchen_drawer/CloseDrawer/2024-04-30/demo_gentex_im128_randcams_im224.hdf5"
+    # PnPSinkToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/expert_demos_fixed_textures_224.hdf5"
+    # PnPStoveToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams_im224.hdf5"
+    # PnPCabToCounter: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im224.hdf5"
+    # CoffeeServeMug: "externals/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5"
+    # PnPCounterToSink: "externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5"
   aug:
     crop: 0.9
     brightness: 0.2
@@ -90,13 +90,5 @@ dataset:
     saturation_depth: 0.02
     hue_rgb: 0.05
     hue_depth: 0.02
-
-  tasks: 
-    CloseDrawer: null
-    PnPCabToCounter: null
-    PnPSinkToCounter: null
-    PnPStoveToCounter: null
-    CoffeeServeMug: null
-    PnPCounterToSink: null
   skip_demos:
     TurnOnStove: ["demo_33", "demo_37"]

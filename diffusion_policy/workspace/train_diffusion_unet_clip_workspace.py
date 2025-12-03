@@ -109,14 +109,17 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # Read task name and configure human_path and tasks
         task_name = cfg.task.name
-        cfg.task.dataset.tasks = {task_name: None}
 
         # configure dataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
-        # import pdb; pdb.set_trace()
         train_dataloader = DataLoader(dataset, **cfg.dataloader)
 
         print('train dataset:', len(dataset), ', ' 'train dataloader:', len(train_dataloader))
+
+        # configure validation dataset
+        val_dataset = dataset.get_validation_dataset()
+        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        print('val dataset:', len(val_dataset), ', ' 'val dataloader:', len(val_dataloader))
 
         # configure lr scheduler
         lr_scheduler = get_scheduler(
@@ -139,11 +142,11 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 model=self.ema_model)
 
         # configure env
-        env_runner: BaseImageRunner
-        env_runner = hydra.utils.instantiate(
-            cfg.task.env_runner,
-            output_dir=self.output_dir)
-        assert isinstance(env_runner, BaseImageRunner)
+        # env_runner: BaseImageRunner
+        # env_runner = hydra.utils.instantiate(
+        #     cfg.task.env_runner,
+        #     output_dir=self.output_dir)
+        # assert isinstance(env_runner, BaseImageRunner)
 
         # # configure logging
         # wandb_run = wandb.init(
@@ -171,8 +174,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         # optimizer_to(self.optimizer, device)
 
         # accelerator
-        train_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
-            train_dataloader, self.model, self.optimizer, lr_scheduler
+        # accelerator
+        train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler = accelerator.prepare(
+            train_dataloader, val_dataloader, self.model, self.optimizer, lr_scheduler
         )
         device = self.model.device
         if self.ema_model is not None:
@@ -266,50 +270,59 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 #     step_log.update(runner_log)
 
                 # run validation
-                # if (self.epoch % cfg.training.val_every) == 0 and len(val_dataloader) > 0 and accelerator.is_main_process:
-                #     with torch.no_grad():
-                #         val_losses = list()
-                #         with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
-                #                 leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
-                #             for batch_idx, batch in enumerate(tepoch):
-                #                 batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
-                #                 loss = self.model(batch)
-                #                 val_losses.append(loss)
-                #                 if (cfg.training.max_val_steps is not None) \
-                #                     and batch_idx >= (cfg.training.max_val_steps-1):
-                #                     break
-                #         if len(val_losses) > 0:
-                #             val_loss = torch.mean(torch.tensor(val_losses)).item()
-                #             # log epoch average validation loss
-                #             step_log['val_loss'] = val_loss
+                if (self.epoch % cfg.training.val_every) == 0 and len(val_dataloader) > 0 and accelerator.is_main_process:
+                    with torch.no_grad():
+                        val_losses = list()
+                        with tqdm.tqdm(val_dataloader, desc=f"Validation epoch {self.epoch}", 
+                                leave=False, mininterval=cfg.training.tqdm_interval_sec) as tepoch:
+                            for batch_idx, batch in enumerate(tepoch):
+                                batch = dict_apply(batch, lambda x: x.to(device, non_blocking=True))
+                                loss = self.model(batch)
+                                val_losses.append(loss)
+                                if (cfg.training.max_val_steps is not None) \
+                                    and batch_idx >= (cfg.training.max_val_steps-1):
+                                    break
+                        if len(val_losses) > 0:
+                            val_loss = torch.mean(torch.tensor(val_losses)).item()
+                            # log epoch average validation loss
+                            step_log['val_loss'] = val_loss
                 
-                # def log_action_mse(step_log, category, pred_action, gt_action):
-                #     B, T, _ = pred_action.shape
-                #     pred_action = pred_action.view(B, T, -1, 10)
-                #     gt_action = gt_action.view(B, T, -1, 10)
-                #     step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action)
-                #     step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3])
-                #     step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9])
-                #     step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9])
-                # # run diffusion sampling on a training batch
-                # if (self.epoch % cfg.training.sample_every) == 0 and accelerator.is_main_process:
-                #     with torch.no_grad():
-                #         # sample trajectory from training set, and evaluate difference
-                #         batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
-                #         gt_action = batch['action']
-                #         pred_action = policy.predict_action(batch['obs'], None)['action_pred']
-                #         log_action_mse(step_log, 'train', pred_action, gt_action)
+                def log_action_mse(step_log, category, pred_action, gt_action):
+                    B, T, D = pred_action.shape
+                    if D==10:
+                        pred_action = pred_action.view(B, T, -1, 10)
+                        gt_action = gt_action.view(B, T, -1, 10)
+                        step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action)
+                        step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3])
+                        step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:9], gt_action[..., 3:9])
+                        step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 9], gt_action[..., 9])
+                    elif D==7:
+                        pred_action = pred_action.view(B, T, -1, 7)
+                        gt_action = gt_action.view(B, T, -1, 7)
+                        step_log[f'{category}_action_mse_error'] = torch.nn.functional.mse_loss(pred_action, gt_action).item()
+                        step_log[f'{category}_action_mse_error_pos'] = torch.nn.functional.mse_loss(pred_action[..., :3], gt_action[..., :3]).item()
+                        step_log[f'{category}_action_mse_error_rot'] = torch.nn.functional.mse_loss(pred_action[..., 3:6], gt_action[..., 3:6]).item()
+                        step_log[f'{category}_action_mse_error_width'] = torch.nn.functional.mse_loss(pred_action[..., 6:], gt_action[..., 6:]).item()
 
-                #         if len(val_dataloader) > 0:
-                #             val_sampling_batch = next(iter(val_dataloader))
-                #             batch = dict_apply(val_sampling_batch, lambda x: x.to(device, non_blocking=True))
-                #             gt_action = batch['action']
-                #             pred_action = policy.predict_action(batch['obs'], None)['action_pred']
-                #             log_action_mse(step_log, 'val', pred_action, gt_action)
+                # run diffusion sampling on a training batch
+                if (self.epoch % cfg.training.sample_every) == 0 and accelerator.is_main_process:
+                    with torch.no_grad():
+                        # sample trajectory from training set, and evaluate difference
+                        batch = dict_apply(train_sampling_batch, lambda x: x.to(device, non_blocking=True))
+                        gt_action = batch['action']
+                        pred_action = policy.predict_action(batch['obs'], None)
+                        log_action_mse(step_log, 'train', pred_action, gt_action)
 
-                #         del batch
-                #         del gt_action
-                #         del pred_action
+                        if len(val_dataloader) > 0:
+                            val_sampling_batch = next(iter(val_dataloader))
+                            batch = dict_apply(val_sampling_batch, lambda x: x.to(device, non_blocking=True))
+                            gt_action = batch['action']
+                            pred_action = policy.predict_action(batch['obs'], None)
+                            log_action_mse(step_log, 'val', pred_action, gt_action)
+
+                        del batch
+                        del gt_action
+                        del pred_action
                 
                 # checkpoint
                 if (self.epoch % cfg.training.checkpoint_every) == 0 and accelerator.is_main_process:
