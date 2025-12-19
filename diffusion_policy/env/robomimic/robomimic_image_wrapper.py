@@ -100,48 +100,6 @@ class RobomimicImageWrapper(gym.Env):
                 obs[key] = self.language_goal
             elif key=='task_description':
                 obs[key] = self.task_description
-            elif key == 'left_image':
-                # Map left_image to robot0_agentview_left_image
-                # Ensure we resize if necessary, similar to other images
-                source_key = 'robot0_agentview_left_image'
-                if self.observation_space[key].shape != raw_obs[source_key].shape:
-                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
-                    img = raw_obs[source_key]
-                    if img.shape[2] == 3: # HWC
-                        pass
-                    elif img.shape[0] == 3: # CHW
-                        img = img.transpose(1, 2, 0)
-                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
-                else:
-                    obs[key] = raw_obs[source_key]
-            elif key == 'right_image':
-                # Map left_image to robot0_agentview_left_image
-                # Ensure we resize if necessary, similar to other images
-                source_key = 'robot0_agentview_right_image'
-                if self.observation_space[key].shape != raw_obs[source_key].shape:
-                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
-                    img = raw_obs[source_key]
-                    if img.shape[2] == 3: # HWC
-                        pass
-                    elif img.shape[0] == 3: # CHW
-                        img = img.transpose(1, 2, 0)
-                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
-                else:
-                    obs[key] = raw_obs[source_key]
-            elif key == 'gripper_image':
-                # Map left_image to robot0_agentview_left_image
-                # Ensure we resize if necessary, similar to other images
-                source_key = 'robot0_eye_in_hand_image'
-                if self.observation_space[key].shape != raw_obs[source_key].shape:
-                    target_h, target_w = self.observation_space[key].shape[1], self.observation_space[key].shape[2]
-                    img = raw_obs[source_key]
-                    if img.shape[2] == 3: # HWC
-                        pass
-                    elif img.shape[0] == 3: # CHW
-                        img = img.transpose(1, 2, 0)
-                    obs[key] = cv2.resize(img, (target_w, target_h), interpolation=cv2.INTER_AREA).transpose(2, 0, 1)
-                else:
-                    obs[key] = raw_obs[source_key]
             else:
                 obs[key] = raw_obs[key]
         return obs

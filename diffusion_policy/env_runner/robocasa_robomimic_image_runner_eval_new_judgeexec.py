@@ -61,6 +61,7 @@ import qwen_vl_utils
 from transformers import AutoModelForVision2Seq
 
 import subprocess
+DEBUG = False
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import CLIPTokenizer, CLIPModel
 import torch
@@ -351,30 +352,37 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
         batch_end = min(batch_start + batch_size, len(conversations))
         batch_conversations = conversations[batch_start:batch_end]
 
-        batch_texts = [
-            processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
-            for conv in batch_conversations
-        ]
-        batch_image_inputs, _ = zip(
-            *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
-        )
-        batch_image_inputs = list(batch_image_inputs)
-        inputs = processor(
-            text=batch_texts,
-            images=batch_image_inputs,
-            padding=True,
-            return_tensors="pt",
-        ).to(model.device)
+        if model == "random":
+            batch_outputs = [str(random.randint(-32, 32)) for _ in range(len(batch_conversations))]
+        elif model == "choose0index":
+            batch_outputs = ["-32" for _ in range(len(batch_conversations))]
+        elif not isinstance(model, str):
+            print('querying COSMOS-REASON1')
+            batch_texts = [
+                processor.apply_chat_template(conv, tokenize=False, add_generation_prompt=True)
+                for conv in batch_conversations
+            ]
+            batch_image_inputs, _ = zip(
+                *[qwen_vl_utils.process_vision_info(conv) for conv in batch_conversations]
+            )
+            batch_image_inputs = list(batch_image_inputs)
 
-        with torch.no_grad():
-            generated_ids = model.generate(**inputs, max_new_tokens=1024)
-
-        generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
-        batch_outputs = processor.batch_decode(
-            generated_ids_trimmed,
-            skip_special_tokens=True,
-            clean_up_tokenization_spaces=False,
-        )
+            inputs = processor(
+                text=batch_texts,
+                images=batch_image_inputs,
+                padding=True,
+                return_tensors="pt",
+            ).to(model.device)
+            with torch.no_grad():
+                generated_ids = model.generate(**inputs, max_new_tokens=5, do_sample=False, return_dict_in_generate=False)
+            generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
+            batch_outputs = processor.batch_decode(
+                generated_ids_trimmed,
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False,
+            )
+        else:
+            raise ValueError(f"Unknown model option: {model}")
         all_outputs.extend(batch_outputs)
 
     # --- Extract numeric relative ranks and optionally annotate overlays ---
@@ -403,61 +411,33 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
     with ThreadPoolExecutor(max_workers=min(32, len(image_paths_to_annotate))) as executor:
         executor.map(add_text_to_image, image_paths_to_annotate, texts_to_add)
 
-    # --- Elo aggregation per environment ---
-    # Initialize ratings for each environment
+    # --- Win Count aggregation per environment ---
+    # Initialize win counts for each environment
     env_ratings_dict = [
-        {sample_idx: 1000.0 for sample_idx in range(n_samples)}
+        {sample_idx: 0.0 for sample_idx in range(n_samples)}
         for _ in range(n_envs_local)
     ]
-    # Build results list for each environment
-    env_results = [[] for _ in range(n_envs_local)]
+    
     skipped_comparisons = 0
     for k, meta in enumerate(pair_metadata):
         env_idx = meta['env_idx']
         i = meta['i']
         j = meta['j']
         score = relative_ranks[k]
-        if score == 0 or score is None:
-            skipped_comparisons += 1
-            continue
-        winner = 'b' if score > 0 else 'a'  # positive => right(j) better; negative => left(i) better
-        # Include score magnitude as 4th element in tuple
-        env_results[env_idx].append((i, j, winner, score))
+        winner = 'a' if score is None or score < 0 else 'b'
+        
+        if winner == 'a':
+            env_ratings_dict[env_idx][i] += 1
+        else:
+            env_ratings_dict[env_idx][j] += 1
 
     print(f"Skipped {skipped_comparisons} comparisons (score=0 or None)")
 
-    # Batch update ratings for each environment
-    for env_idx in range(n_envs_local):
-        if env_results[env_idx]:  # Only update if there are results
-            print(f"Env {env_idx}: Processing {len(env_results[env_idx])} comparisons")
-            env_ratings_dict[env_idx] = batch_update_ratings(
-                env_ratings_dict[env_idx],
-                env_results[env_idx],
-                k=32,
-                use_magnitude=True,
-                score_range=50
-            )
-        else:
-            print(f"WARNING: Env {env_idx} has NO valid comparisons - all samples will have equal ratings!")
     # Convert dict ratings back to array format
     env_ratings = [
         np.array([env_ratings_dict[env_idx][i] for i in range(n_samples)], dtype=np.float32)
         for env_idx in range(n_envs_local)
     ]
-    # # --- Elo aggregation per environment ---
-    # env_ratings = [np.full((n_samples,), 1000.0, dtype=np.float32) for _ in range(n_envs_local)]
-    # for k, meta in enumerate(pair_metadata):
-    #     env_idx = meta['env_idx']
-    #     i = meta['i']
-    #     j = meta['j']
-    #     score = relative_ranks[k]
-    #     if score == 0 or score is None:
-    #         continue
-    #     winner = 'b' if score > 0 else 'a'  # positive => right(j) better; negative => left(i) better
-    #     ra, rb = float(env_ratings[env_idx][i]), float(env_ratings[env_idx][j])
-    #     new_a, new_b = update_ratings(ra, rb, winner)
-    #     env_ratings[env_idx][i] = new_a
-    #     env_ratings[env_idx][j] = new_b
 
     # --- Select best sample per environment and get sorted order ---
     # sorted_orders = []  # New list to store the sorted order of samples
@@ -840,18 +820,10 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 env_init_fn_dills.append(dill.dumps(init_fn))
         
         
-        
-        self.debug=debug
-        if self.debug:
-            env = SyncVectorEnv(env_fns)
-            """ from scipy.spatial.transform import Rotation as R
-            temp=env.envs[0].env.env.env.env._observables
-            rot = R.from_quat(temp['robot0_base_quat'])
-            R_base_to_world = rot.as_matrix()
-            eef_offset_world = R_base_to_world @ temp['robot0_base_to_eef_pos']
-            assert np.allclose(temp['robot0_eef_pos'] , temp['robot0_base_pos']+eef_offset_world, atol=1e-6) """
-        else:
-            env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
+        global DEBUG
+        DEBUG=debug
+        # env = SyncVectorEnv(env_fns)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
 
         if save_stuff:
             self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
@@ -898,22 +870,26 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 print("No GPUs found.")
             
             # Initialize LLM once
-            print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-            from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=True,
-                llm_int8_threshold=6.0
-            )
-            self.llm = AutoModelForVision2Seq.from_pretrained(
-                self.llm_path,
-                torch_dtype='bfloat16',
-                device_map={"": f"cuda:{LLM_GPU_ID}"},
-                trust_remote_code=True,
-                # quantization_config=None,
-                quantization_config=quantization_config,
-            )
-            self.llm = self.llm.eval()
-            self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
+            if self.llm_path == "random" or self.llm_path == "choose0index" or self.llm_path == "none":
+                self.llm = self.llm_path
+                self.processor = None
+            else:
+                print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+                from transformers import BitsAndBytesConfig
+                quantization_config = BitsAndBytesConfig(
+                    load_in_8bit=True,
+                    llm_int8_threshold=6.0
+                )
+                self.llm = AutoModelForVision2Seq.from_pretrained(
+                    self.llm_path,
+                    torch_dtype='bfloat16',
+                    device_map={"": f"cuda:{LLM_GPU_ID}"},
+                    trust_remote_code=True,
+                    # quantization_config=None,
+                    quantization_config=quantization_config,
+                )
+                self.llm = self.llm.eval()
+                self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
             task_description = "Pick and place an object from the sink to the plate on the counter"
             SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
             The robot task is: {task_description}
@@ -1070,10 +1046,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         num_iterations = max(1, self.num_samples)
                         pbar2=tqdm.tqdm(range(num_iterations), desc="Trying diff action samples")
                         aggregated_obs = []
+                        start_actions = self.n_obs_steps - 1
+                        end_actions = start_actions + self.num_actions_to_execute
                         for sample_idx in pbar2:
                             pbar2.set_description(f"step: {env_step_index} sampling {sample_idx}/{num_iterations}")
-                            self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
-                            results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            # self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, start_actions:end_actions] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
+                            results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, start_actions:end_actions] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
                             obs = [r[0] for r in results]  # temp_observations from each env
                             processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                             sd_sample_obs.append(obs)
@@ -1090,8 +1068,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 step2_sampled_actions[extra_step].append(step2_actions)
                                 add_on = np.tile([0., -0.,  0.,  0., -1.], (step2_actions.shape[0], step2_actions.shape[1], 1))
                                 step2_extended_env_action = np.concatenate((step2_actions, add_on), axis=-1)
-                                self.generate_next_step(obs,[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
-                                results = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])])
+                                # self.generate_next_step(obs,[step2_extended_env_action[i:i+1, start_actions:end_actions] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
+                                results = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, start_actions:end_actions] for i in range(step2_extended_env_action.shape[0])])
                                 obs = [r[0] for r in results]  # temp_observations from each env
                                 processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                                 step2_sd_sample_obs[extra_step].append(obs)
@@ -1116,7 +1094,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
                         print('querying COSMOS-REASON1')
                         # flattened_videos_list = list(itertools.chain.from_iterable(videos))  
-                        best_action_indices, raw_results = self.PROMPTS['call_function'](videos, self.llm, self.processor,n_envs,self.PROMPTS)
+                        best_action_indices, raw_results = get_qwen_relative_rank_batchify(videos, self.llm, self.processor,n_envs,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
                         # print('sorted orders (best to worst):', sorted_orders)
                         # Handle raw_results formatting based on its structure
@@ -1134,7 +1112,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
 
                         # Extract the best initial actions (first 16 actions)
-                        selected_initial_actions = actions[np.arange(actions.shape[0]), best_action_indices, :self.num_actions_to_execute, :]
+                        selected_initial_actions = actions[np.arange(actions.shape[0]), best_action_indices, start_actions:end_actions, :]
 
                         # Extract the best additional actions for each extra step
                         all_additional_actions = []
@@ -1145,7 +1123,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             # Transpose to (batch_size, num_samples, 16, 7) to match the selection logic
                             step2_actions_array = np.transpose(step2_actions_array, (1, 0, 2, 3))
                             # Select the best actions based on best_action_indices
-                            selected_step2_actions = step2_actions_array[np.arange(step2_actions_array.shape[0]), best_action_indices, :self.num_actions_to_execute, :]
+                            selected_step2_actions = step2_actions_array[np.arange(step2_actions_array.shape[0]), best_action_indices, start_actions:end_actions, :]
                             all_additional_actions.append(selected_step2_actions)
 
                         # Concatenate all actions: initial + all additional steps
@@ -1233,9 +1211,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # update pbar
                 pbar.update(extended_env_action.shape[1])
-                if self.debug:
-                    if env_step_index==10:
-                        done=True     
                 # if chunk_idx+1<n_chunks:
                 #     done=True
                

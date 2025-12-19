@@ -422,10 +422,10 @@ class InMemoryVideoDataset(Dataset):
 
         return {
             "obs": {
-                "task_description": clip_embedding,
-                "left_image": left_image,
-                "right_image": right_image,
-                "gripper_image": gripper_image,
+                "language_goal": clip_embedding,
+                "robot0_agentview_left_image": left_image,
+                "robot0_agentview_right_image": right_image,
+                "robot0_eye_in_hand_image": gripper_image,
             },
             "action": relative_actions_abs_normalized,
         }

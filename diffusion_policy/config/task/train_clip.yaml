@@ -9,22 +9,22 @@ ignore_proprioception: True
 shape_meta: &shape_meta
   # acceptable types: rgb, low_dim
   obs:
-    left_image:
+    robot0_agentview_left_image:
       shape: [3, 224, 224]
       horizon: ${task.img_obs_horizon} # int
       type: rgb
       ignore_by_policy: False
-    right_image:
+    robot0_agentview_right_image:
       shape: [3, 224, 224]
       horizon: ${task.img_obs_horizon} # int
       type: rgb
       ignore_by_policy: False
-    gripper_image:
+    robot0_eye_in_hand_image:
       shape: [3, 224, 224]
       horizon: ${task.img_obs_horizon} # int
       type: rgb
       ignore_by_policy: False
-    task_description:
+    language_goal:
       shape: [1024]
       horizon: ${task.img_obs_horizon} # int
       type: low_dim

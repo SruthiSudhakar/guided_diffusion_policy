@@ -142,6 +142,83 @@ class MultiStepWrapper(gym.Wrapper):
         # end=time.time()
         # print(colored(f'reset time: {end-start}','red'))
         return temp_observations, temp_processed_obs
+    
+    def batch_hallucinate_step(self, actions_list, reset_to_state):
+        """
+        actions_list: list of action sequences, where each sequence is (n_action_steps,) + action_shape
+        reset_to_state: state to reset to before each sequence
+        
+        Executes multiple action sequences in the environment, resetting between each sequence.
+        Returns a list of results for each sequence.
+        """
+        # Save the wrapper's internal state before hallucination
+        if not hasattr(self, '_saved_obs'):
+            # Store the saved state as instance variables to be restored later
+            self._saved_obs = self.obs.copy()
+            self._saved_reward = self.reward.copy()
+            self._saved_done = self.done.copy()
+            self._saved_grasps = self.grasps.copy()
+            # Deep copy the defaultdict and its deques
+            self._saved_info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
+            for key, val in self.info.items():
+                self._saved_info[key] = val.copy()
+
+        all_results = []
+        
+        for action_seq in actions_list:
+            # Reset physics state
+            self.env.env.env.reset_to({'states': reset_to_state})
+            
+            # Restore wrapper state buffers (using copies to avoid polluting the saved state)
+            self.obs = self._saved_obs.copy()
+            self.reward = self._saved_reward.copy()
+            self.done = self._saved_done.copy()
+            self.grasps = self._saved_grasps.copy()
+            self.info = defaultdict(lambda : deque(maxlen=self.n_obs_steps+1))
+            for key, val in self._saved_info.items():
+                self.info[key] = val.copy()
+                
+            # Execute the action sequence
+            temp_observations = []
+            temp_processed_obs = []
+            
+            for act in action_seq:
+                if len(self.done) > 0 and self.done[-1]:
+                    # termination
+                    break
+                
+                # We call the inner env's hallucinate_step logic, but since we are managing the reset/restore
+                # at this level, we can just call step() on the inner env if it doesn't have special logic,
+                # OR we can call hallucinate_step if it does.
+                # Looking at RobomimicImageWrapper, hallucinate_step just calls step() and get_observation().
+                # However, MultiStepWrapper.hallucinate_step calls self.env.env.hallucinate_step.
+                # Let's stick to calling the inner hallucinate_step to be safe, but we need to handle the return values.
+                
+                # Actually, wait. MultiStepWrapper.hallucinate_step iterates over the action sequence (n_action_steps).
+                # The inner env (VideoRecordingWrapper -> RobomimicImageWrapper) has a hallucinate_step that takes ONE action.
+                # So we are doing the right thing by iterating here.
+                
+                observation, processed_obs, reward, done, info = self.env.env.hallucinate_step(act)
+                
+                # We also need to update the MultiStepWrapper's buffers because subsequent steps in the sequence
+                # might depend on the history (though RobomimicImageWrapper seems stateless regarding history,
+                # MultiStepWrapper maintains history for observations).
+                
+                self.obs.append(observation)
+                self.reward.append(reward)
+                if (self.max_episode_steps is not None) \
+                    and (len(self.reward) >= self.max_episode_steps):
+                    done = True
+                self.done.append(done)
+                self.grasps.append(self.env.is_grasping())
+                self._add_info(info)
+                
+                temp_observations.append(observation)
+                temp_processed_obs.append(processed_obs)
+            
+            all_results.append((temp_observations, temp_processed_obs))
+            
+        return all_results
 
     def reset_after_hallucination(self, reset_to_state):
         # Reset the physics state

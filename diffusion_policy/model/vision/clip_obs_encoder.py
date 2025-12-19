@@ -290,7 +290,7 @@ class TimmObsEncoder(ModuleAttrMixin):
         example_obs_dict = dict()
         obs_shape_meta = self.shape_meta['obs']
         for key, attr in obs_shape_meta.items():
-            if key == 'task_description':
+            if key == 'language_goal':
                 shape = tuple(attr['shape'])
                 this_obs = torch.zeros(
                     (1, 1) + shape, 

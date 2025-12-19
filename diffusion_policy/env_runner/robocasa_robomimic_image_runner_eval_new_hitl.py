@@ -61,6 +61,7 @@ import qwen_vl_utils
 from transformers import AutoModelForVision2Seq
 
 import subprocess
+DEBUG = False
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from transformers import CLIPTokenizer, CLIPModel
 import torch
@@ -301,7 +302,7 @@ def save_last_frame_method(video_path):
     cv2.imwrite(output_path, cropped)
     return output_path
 
-def get_user_input_direct_selection(all_video_paths, model, processor, n_envs, PROMPTS):
+def get_user_input_direct_selection(all_video_paths):
     best_indices = []
     raw_results = []
 
@@ -728,17 +729,9 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         
         
         
-        self.debug=debug
-        if self.debug:
-            env = SyncVectorEnv(env_fns)
-            """ from scipy.spatial.transform import Rotation as R
-            temp=env.envs[0].env.env.env.env._observables
-            rot = R.from_quat(temp['robot0_base_quat'])
-            R_base_to_world = rot.as_matrix()
-            eef_offset_world = R_base_to_world @ temp['robot0_base_to_eef_pos']
-            assert np.allclose(temp['robot0_eef_pos'] , temp['robot0_base_pos']+eef_offset_world, atol=1e-6) """
-        else:
-            env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
+        DEBUG=debug
+        # env = SyncVectorEnv(env_fns)
+        env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
 
         if save_stuff:
             self.data_file= h5py.File(self.output_dir+'/datafile.hdf5', 'w')
@@ -774,59 +767,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.additional_steps=additional_steps
         self.num_actions_to_execute=num_actions_to_execute
         self.llm_path = llm_path
-        if self.choose_sample:
-            # Find the GPU with the lowest memory utilization
-            LLM_GPU_ID, gpu_utilization = get_gpu_with_lowest_memory_util()
-
-            if LLM_GPU_ID is not None:
-                print(f"GPU with the lowest memory utilization: GPU-{LLM_GPU_ID} with {gpu_utilization * 100:.2f}% usage")
-            else:
-                raise Exception('cannot contain LLM ')
-                print("No GPUs found.")
-            
-            # Initialize LLM once
-            print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
-            from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(
-                load_in_8bit=True,
-                llm_int8_threshold=6.0
-            )
-            self.llm = AutoModelForVision2Seq.from_pretrained(
-                self.llm_path,
-                torch_dtype='bfloat16',
-                device_map={"": f"cuda:{LLM_GPU_ID}"},
-                trust_remote_code=True,
-                # quantization_config=None,
-                quantization_config=quantization_config,
-            )
-            self.llm = self.llm.eval()
-            self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
-            task_description = "Pick and place an object from the sink to the plate on the counter"
-            SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
-            The robot task is: {task_description}
-            You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
-
-            problem = f"""Look at these two side-by-side images of a robot performing the task. \
-
-            Left side image: Shows the robot at one point during the task. \
-            Right side image: Shows the robot at another point during the task. \
-
-            Task: Compare the two images and determine the relative progress difference. \
-            - If the right image shows more progress toward task completion, respond with a positive number of how much farther (1 to 100) \
-            - If the right image shows less progress toward task completion, respond with a negative number (-1 to -100) \
-
-            The number should represent how much more or less progress the right image shows compared to the left."""
-
-            extract_function = float
-
-            PROMPTS = {
-                "system_prompt": SYSTEM_PROMPT,
-                "problem": problem,
-                'extract_function': extract_function,
-                'call_function': get_user_input_direct_selection
-            }
-            self.PROMPTS= PROMPTS
-
     def generate_next_step(self, current_obs, list_actions, output_dir):
         """
         Generate predicted next frames using the world model.
@@ -995,8 +935,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
                         print('Getting user input for sample selection')
-                        # flattened_videos_list = list(itertools.chain.from_iterable(videos))
-                        best_action_indices, raw_results = self.PROMPTS['call_function'](videos, self.llm, self.processor,n_envs,self.PROMPTS)
+                        best_action_indices, raw_results = get_user_input_direct_selection(videos)
                         print('best actions idx:', best_action_indices)
                         # print('sorted orders (best to worst):', sorted_orders)
                         chunk_step_actions[chunk_idx][env_step_index]={
@@ -1083,9 +1022,6 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                 # update pbar
                 pbar.update(extended_env_action.shape[1])
-                if self.debug:
-                    if env_step_index==10:
-                        done=True     
                 # if chunk_idx+1<n_chunks:
                 #     done=True
                
@@ -1145,6 +1081,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                     max_reward = np.max(all_rewards[i])
                     max_rewards[prefix].append(max_reward)
                     log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+                    log_data[prefix+f'sim_reward_trajectory_{seed}'] = all_rewards[i].tolist() if isinstance(all_rewards[i], np.ndarray) else list(all_rewards[i])
                     if classifier and self.show_classifier_scores:
                         log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
                         # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))
@@ -1198,6 +1135,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             max_reward = np.max(all_rewards[i])
             max_rewards[prefix].append(max_reward)
             log_data[prefix+f'sim_max_reward_{seed}'] = max_reward
+            log_data[prefix+f'sim_reward_trajectory_{seed}'] = all_rewards[i].tolist() if isinstance(all_rewards[i], np.ndarray) else list(all_rewards[i])
             if classifier and self.show_classifier_scores:
                 log_data[prefix+'a.cpgc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores1_before[i]))
                 # log_data[prefix+'a.gc_before'+"_"+str(seed)] = ", ".join(f"{i}: {round(value,3)}" for i, value in enumerate(all_classification_scores2_before[i]))

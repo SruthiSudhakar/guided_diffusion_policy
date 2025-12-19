@@ -8,11 +8,21 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 
-python final_eval_clip_policy.py --checkpoint data/outputs/dec2/2025.12.02/22.03.56_train_diffusion_unet_clip/checkpoints/epoch=0100-train_loss=0.023.ckpt \
+python final_eval_clip_policy.py --checkpoint data/outputs/dec4/2025.12.03/22.38.34_train_diffusion_unet_clip/checkpoints/epoch=0020-train_loss=0.033.ckpt \
     --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
     --device cuda:4 \
     --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_expert_fixed_224 \
+    --list_dataset_path PnPCoffeeServeMug_expert_rand_128 \
+    --n_envs 52 \
+    --n_train 51 \
+    --n_test 1 \
+    --prefix_dir test
+
+python final_eval_clip_policy.py --checkpoint data/outputs/dec4/2025.12.03/22.33.27_train_diffusion_unet_clip/checkpoints/epoch=0010-train_loss=0.041.ckpt \
+    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
+    --device cuda:1 \
+    --change_test_textures \
+    --list_dataset_path PnPStoveToCounter_expert_fixed_224 \
     --n_envs 2 \
     --n_train 1 \
     --n_test 1 \
@@ -163,7 +173,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             
         with open_dict(cfg):
 
-            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_new.RobocasaRobomimicImageRunnerEval'
+            cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_clip.RobocasaRobomimicImageRunnerEvalClip'
             cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
 
             # Copy shape_meta from task level to env_runner level if it exists at task level

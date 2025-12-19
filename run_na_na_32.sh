@@ -5,8 +5,8 @@ for i in {1..100}
 do
     echo "===== Running iteration $i of 50 ====="
     python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-        --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-        --device cuda:${1} \
+        --llm_path none \
+        --device cuda:0 \
         --change_test_textures \
         --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
         --n_envs 42 \
@@ -17,7 +17,7 @@ do
         --additional_steps 3 \
         --start_rollout_from_state 140 \
         --max_steps 200 \
-        --prefix_dir nov27_na_na_32
+        --prefix_dir dec17_na_na_32
     echo "===== Completed iteration $i of 50 ====="
     echo ""
 done

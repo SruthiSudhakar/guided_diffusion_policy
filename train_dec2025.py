@@ -8,55 +8,26 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 Training:
-CUDA_VISIBLE_DEVICES=0 python train.py \
-    --config-dir=. \
-    --config-name=train_robocasa_base_dp_clip_policy.yaml \
-    training.seed=42 \
-    dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=justPnPSinkToCounter \
-    "task.dataset.human_path={PnPSinkToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/expert_demos_fixed_textures_224.hdf5}"
-CUDA_VISIBLE_DEVICES=1 python train.py \
-    --config-dir=. \
-    --config-name=train_robocasa_base_dp_clip_policy.yaml \
-    training.seed=42 \
-    dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=justPnPStoveToCounter \
-    "task.dataset.human_path={PnPStoveToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams_im224.hdf5}"
-CUDA_VISIBLE_DEVICES=2 python train.py \
-    --config-dir=. \
-    --config-name=train_robocasa_base_dp_clip_policy.yaml \
-    training.seed=42 \
-    dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=justPnPCabToCounter \
-    "task.dataset.human_path={PnPCabToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im224.hdf5}"
-CUDA_VISIBLE_DEVICES=3 python train.py \
-    --config-dir=. \
-    --config-name=train_robocasa_base_dp_clip_policy.yaml \
-    training.seed=42 \
-    dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=justCoffeeServeMug \
-    "task.dataset.human_path={CoffeeServeMug: externals/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5}"
-CUDA_VISIBLE_DEVICES=4 python train.py \
-    --config-dir=. \
-    --config-name=train_robocasa_base_dp_clip_policy.yaml \
-    training.seed=42 \
-    dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=justPnPCounterToSink \
-    "task.dataset.human_path={PnPCounterToSink: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5}"
 
-accelerate launch --num_machines 1 --num_processes 8 --main_process_port=8082 train.py \
+CoffeeServeMug, PnPCabToCounter, PnPStoveToCounter, PnPCounterToSink
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --num_machines 1 --num_processes 4 --gpu_ids=0,1,2,3 --main_process_port=8082 train.py \
     --config-dir=. \
     --config-name=train_robocasa_base_dp_clip_policy.yaml \
     training.seed=42 \
     dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec3/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}' \
-    task.name=5PnPtasks \
-    "task.dataset.human_path={PnPSinkToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPSinkToCounter/2024-04-26_2/expert_demos_fixed_textures_224.hdf5, PnPStoveToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPStoveToCounter/2024-05-01/demo_gentex_im128_randcams_im224.hdf5, PnPCabToCounter: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCabToCounter/2024-04-24/demo_gentex_im128_randcams_im224.hdf5, CoffeeServeMug: externals/robocasa/datasets/v0.1/single_stage/kitchen_coffee/CoffeeServeMug/2024-05-01/demo_gentex_im128_randcams.hdf5, PnPCounterToSink: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToSink/2024-04-25/demo_gentex_im128_randcams.hdf5}"
+    hydra.run.dir='data/outputs/dec4/${now:%Y.%m.%d}/${now:%H.%M.%S}_clip_${task_name}' \
+    task.name=justPnPCounterToCab \
+    "task.dataset.human_path={PnPCounterToCab: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/2024-04-24/demo_gentex_im128_randcams_im224.hdf5}"
+
+CUDA_VISIBLE_DEVICES=4,5,6,7 accelerate launch --num_machines 1 --num_processes 4 --gpu_ids=4,5,6,7 --main_process_port=8082 train.py \
+    --config-dir=. \
+    --config-name=train_robocasa_base_dp_clip_policy.yaml \
+    training.seed=42 \
+    dataloader.batch_size=48 \
+    hydra.run.dir='data/outputs/dec4/${now:%Y.%m.%d}/${now:%H.%M.%S}_clip_${task_name}' \
+    task.name=justPnPCounterToMicrowave \
+    "task.dataset.human_path={PnPCounterToMicrowave: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/2024-04-27/demo_gentex_im128_randcams_im224.hdf5}"
 
 """
 

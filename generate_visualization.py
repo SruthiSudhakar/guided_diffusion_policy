@@ -6,12 +6,7 @@ import pdb
 import random
 """
 
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/dec1_trained_32_8
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/dec1_trained_32_32
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/nov21_generate_dp_data_all_demos
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/nov27_na_na_32
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/nov27_trained_32_32
-python3 generate_visualization.py --root_dir data/checkpoints/dp_model/epoch=1100-val_loss=0.037/nov27_trained_32_8
+python3 generate_visualization.py --mp PnPCoffeeServeMug_expert_fixed_224_ --root_dir data/outputs/dec4/2025.12.04/00.06.44_clip_justCoffeeServeMug/checkpoints/epoch_30_step_2231/dec4_na_na_16
 
 """
 
@@ -19,7 +14,7 @@ def generate_visualization(args):
     output_file = f"{args.root_dir}/visualization.html"
     
     # Find all eval_log.json files
-    search_pattern = os.path.join(args.root_dir, f"{args.match_pattern}", "eval_log.json")
+    search_pattern = os.path.join(args.root_dir, f"{args.mp}*", "eval_log.json")
     log_files = glob.glob(search_pattern)
     log_files = random.sample(log_files, k=min(100, len(log_files)))
 
@@ -341,9 +336,9 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "--match_pattern",
+        "--mp",
         type=str,
-        default='PnPSinkToCounter_mg_val_kbpckt_firsthalf_*',
+        required=True,
     )
     args = parser.parse_args()
     generate_visualization(args)

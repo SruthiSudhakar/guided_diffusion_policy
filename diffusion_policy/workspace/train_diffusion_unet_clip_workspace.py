@@ -99,6 +99,8 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             config=OmegaConf.to_container(cfg, resolve=True),
             init_kwargs={"wandb": wandb_cfg}
         )
+        with open(os.path.join(self.output_dir, 'wandb_url.txt'), 'w') as f:
+            f.write(str(wandb_cfg))
 
         # resume training
         if cfg.training.resume:
