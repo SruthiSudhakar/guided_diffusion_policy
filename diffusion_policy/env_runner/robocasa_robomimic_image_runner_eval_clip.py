@@ -905,38 +905,29 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 )
                 self.llm = self.llm.eval()
                 self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
-            TASK_DESC_TO_SYSTEM_PROMPT = {
-                "PnPCounterToCab": "Pick the object from the counter and place it in the cabinet",
-                "PnPCabToCounter": "Pick the object from the cabinet and place it on the counter",
-                "PnPCounterToMicrowave": "Pick the object from the plate on the counter and place it in the microwave",
-                "PnPMicrowaveToCounter": "Pick the object from the microwave and place it on the plate on the counter",
-                "PnPStoveToCounter": "Pick the object from the stove and place it on the plate on the counter",  
-                "PnPCounterToStove": "Pick the object from the plate on the counter and place it on the stove",  
-                "PnPCounterToSink": "Pick the object from the plate on the counter and place it in the sink",  
-                "PnPSinkToCounter": "Pick the object from the sink and place it on the plate on the counter",
-                "CoffeeServeMug": "Pick the mug from under the coffee machine dispenser and place it on the counter",
-                "CloseDrawer": "Close the drawer",
+            TASK_TOKENS = {
+                "PnPCounterToCab": "[COUNTER_TO_CAB]",
+                "PnPCabToCounter": "[CAB_TO_COUNTER]",
+                "PnPCounterToMicrowave": "[COUNTER_TO_MICROWAVE]",
+                "PnPMicrowaveToCounter": "[MICROWAVE_TO_COUNTER]",
+                "PnPStoveToCounter": "[STOVE_TO_COUNTER]",
+                "PnPCounterToStove": "[COUNTER_TO_STOVE]",
+                "PnPCounterToSink": "[COUNTER_TO_SINK]",
+                "PnPSinkToCounter": "[SINK_TO_COUNTER]",
+                "PnPCoffeeServeMug": "[COFFEE_SERVE_MUG]",
+                "PnPCloseDrawer": "[CLOSE_DRAWER]",
             }
-            for task_key, td in TASK_DESC_TO_SYSTEM_PROMPT.items():
+
+            for task_key, td in TASK_TOKENS.items():
                 if task_key in dataset_path:
                     task_desc = td
                     break
             assert task_desc is not None, f"Task description not found for {dataset_path}"
             print('TASK DESCRIPTION', task_desc)
-            SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
-            The robot task is: {task_desc}
-            You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
+            SYSTEM_PROMPT = "Compare robot task progress. Respond with a number: positive if right image shows more progress, negative if less."
+            problem = f"""Task: {task_desc}
+            Which image shows more task progress? Respond with a number from -100 to 100."""
 
-            problem = f"""Look at these two side-by-side images of a robot performing the task. \
-
-            Left side image: Shows the robot at one point during the task. \
-            Right side image: Shows the robot at another point during the task. \
-
-            Task: Compare the two images and determine the relative progress difference. \
-            - If the right image shows more progress toward task completion, respond with a positive number of how much farther (1 to 100) \
-            - If the right image shows less progress toward task completion, respond with a negative number (-1 to -100) \
-
-            The number should represent how much more or less progress the right image shows compared to the left."""
 
             extract_function = float
 
