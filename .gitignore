@@ -9,7 +9,8 @@ _wandb
 architecutre
 src
 hf_cache
-
+.hf_cache/
+.torch_cache/
 **/.DS_Store
 
 fuse.cfg

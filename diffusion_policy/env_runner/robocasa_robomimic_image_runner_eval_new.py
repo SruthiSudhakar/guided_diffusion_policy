@@ -505,8 +505,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
             specific_train_exs=[],
             prompt_with_video=True,
             additional_steps=0,
-            LLM_GPU_ID=7,
             llm_path="",
+            llm_gpu=None,
             PROMPTS={},
             wm_checkpoint_path="",
             wm_guidance=7.0,
@@ -860,22 +860,20 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         self.additional_steps=additional_steps
         self.num_actions_to_execute=num_actions_to_execute
         self.llm_path = llm_path
+        self.llm_gpu = llm_gpu
         if self.choose_sample:
             # Find the GPU with the lowest memory utilization
-            LLM_GPU_ID, gpu_utilization = get_gpu_with_lowest_memory_util()
-
-            if LLM_GPU_ID is not None:
-                print(f"GPU with the lowest memory utilization: GPU-{LLM_GPU_ID} with {gpu_utilization * 100:.2f}% usage")
-            else:
-                raise Exception('cannot contain LLM ')
-                print("No GPUs found.")
+            gpu_utilization = 0
+            if self.llm_gpu is None:
+                self.llm_gpu, gpu_utilization = get_gpu_with_lowest_memory_util()
+            print(f"GPU with the lowest memory utilization: GPU-{self.llm_gpu} with {gpu_utilization * 100:.2f}% usage")
             
             # Initialize LLM once
             if self.llm_path == "random" or self.llm_path == "choose0index" or self.llm_path == "none":
                 self.llm = self.llm_path
                 self.processor = None
             else:
-                print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+                print(f"Initializing LLM on GPU {self.llm_gpu}...")
                 from transformers import BitsAndBytesConfig
                 quantization_config = BitsAndBytesConfig(
                     load_in_8bit=True,
@@ -884,7 +882,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                 self.llm = AutoModelForVision2Seq.from_pretrained(
                     self.llm_path,
                     torch_dtype='bfloat16',
-                    device_map={"": f"cuda:{LLM_GPU_ID}"},
+                    device_map={"": f"cuda:{self.llm_gpu}"},
                     trust_remote_code=True,
                     # quantization_config=None,
                     quantization_config=quantization_config,

@@ -193,9 +193,11 @@ class InMemoryVideoDataset(Dataset):
         print("Loading datasets from paths:", self.human_path)
 
         self.datasets, self.hdf5_datasets = self.get_dataset_file(self.task_list, self.human_path)
-        self.indexed_demos = []
-        for task_index, task_name in enumerate(self.task_list):
 
+        # Collect demos per task first, then do stratified split
+        task_demos = {task_name: [] for task_name in self.task_list}
+
+        for task_index, task_name in enumerate(self.task_list):
             task_data = self.datasets[task_index]['data']
             demo_keys = list(task_data.keys())
             max_demos = int(len(demo_keys)*data_fraction)  # Modify the number of demo keys
@@ -212,18 +214,44 @@ class InMemoryVideoDataset(Dataset):
 
                 demo_steps = range(0, task_data[demo_key]['actions'].shape[0])
                 for demo_step in demo_steps:
-                    self.indexed_demos.append((task_name, task_index, demo_key, demo_step, clip_embedding))
+                    task_demos[task_name].append((task_name, task_index, demo_key, demo_step, clip_embedding))
 
                 added_demos += 1
                 if added_demos > max_demos:
                     break  # Stop once enough demos are added
 
-        # Calculate validation split based on total indexed demos
-        if self._validation_split_arg < 1.0:
-            self.validation_split = int(len(self.indexed_demos) * self._validation_split_arg)
-        else:
-            self.validation_split = int(self._validation_split_arg)
-        print(f"Validation split: {self.validation_split} (from arg {self._validation_split_arg})")
+        # Stratified split: split each task's demos into train/val proportionally
+        self.indexed_demos_train = []
+        self.indexed_demos_val = []
+
+        for task_name in self.task_list:
+            demos = task_demos[task_name]
+            # Shuffle demos within each task before splitting to ensure randomness
+            random.shuffle(demos)
+
+            if self._validation_split_arg < 1.0:
+                val_count = int(len(demos) * self._validation_split_arg)
+            else:
+                # If validation_split_arg >= 1, treat it as absolute count per task proportionally
+                total_demos = sum(len(d) for d in task_demos.values())
+                val_count = int(len(demos) * (self._validation_split_arg / total_demos))
+
+            val_count = max(1, val_count)  # Ensure at least 1 val sample per task
+
+            self.indexed_demos_val.extend(demos[:val_count])
+            self.indexed_demos_train.extend(demos[val_count:])
+
+            print(f"Task {task_name}: {len(demos)} total, {val_count} val, {len(demos) - val_count} train")
+
+        # Shuffle both train and val sets to mix tasks together
+        random.shuffle(self.indexed_demos_train)
+        random.shuffle(self.indexed_demos_val)
+
+        # Combine into indexed_demos with train first, then val (for backward compatibility)
+        self.indexed_demos = self.indexed_demos_train + self.indexed_demos_val
+        self.validation_split = len(self.indexed_demos_val)
+
+        print(f"Total samples: {len(self.indexed_demos)}, Train: {len(self.indexed_demos_train)}, Val: {self.validation_split}")
 
         all_relative_actions = []
 

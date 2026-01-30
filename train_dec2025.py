@@ -11,14 +11,13 @@ Training:
 
 CoffeeServeMug, PnPCabToCounter, PnPStoveToCounter, PnPCounterToSink
 
-CUDA_VISIBLE_DEVICES=0,1,2,3 accelerate launch --num_machines 1 --num_processes 4 --gpu_ids=0,1,2,3 --main_process_port=8082 train.py \
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 accelerate launch --num_machines 1 --num_processes 8 --gpu_ids=0,1,2,3,4,5,6,7 --main_process_port=8082 train.py \
     --config-dir=. \
     --config-name=train_robocasa_base_dp_clip_policy.yaml \
     training.seed=42 \
     dataloader.batch_size=48 \
-    hydra.run.dir='data/outputs/dec4/${now:%Y.%m.%d}/${now:%H.%M.%S}_clip_${task_name}' \
-    task.name=justPnPCounterToCab \
-    "task.dataset.human_path={PnPCounterToCab: externals/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/2024-04-24/demo_gentex_im128_randcams_im224.hdf5}"
+    hydra.run.dir='data/outputs/test/${now:%Y.%m.%d}/${now:%H.%M.%S}_clip_${task_name}' \
+    task.name=allPnP 
 
 CUDA_VISIBLE_DEVICES=4,5,6,7 accelerate launch --num_machines 1 --num_processes 4 --gpu_ids=4,5,6,7 --main_process_port=8082 train.py \
     --config-dir=. \

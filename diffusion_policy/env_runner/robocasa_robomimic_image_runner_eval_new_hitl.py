@@ -729,6 +729,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
         
         
         
+        global DEBUG
         DEBUG=debug
         # env = SyncVectorEnv(env_fns)
         env = AsyncVectorEnv(env_fns, dummy_env_fn=dummy_env_fn)        
@@ -892,10 +893,12 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
 
                         pbar=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
                         aggregated_obs = []
+                        start_actions = self.n_obs_steps - 1
+                        end_actions = start_actions + self.num_actions_to_execute
                         for sample_idx in pbar:
                             pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
-                            self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
-                            results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, :self.num_actions_to_execute] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
+                            # self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx, start_actions:end_actions] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
+                            results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx, start_actions:end_actions] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
                             obs = [r[0] for r in results]  # temp_observations from each env
                             processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                             sd_sample_obs.append(obs)
@@ -910,8 +913,8 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                                 step2_actions = policy.predict_action(step2_obs_dict)[0]['action_pred'].detach().to('cpu').numpy()
                                 add_on = np.tile([0., -0.,  0.,  0., -1.], (step2_actions.shape[0], step2_actions.shape[1], 1))
                                 step2_extended_env_action = np.concatenate((step2_actions, add_on), axis=-1)
-                                self.generate_next_step(obs,[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
-                                results = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, :self.num_actions_to_execute] for i in range(step2_extended_env_action.shape[0])])
+                                # self.generate_next_step(obs,[step2_extended_env_action[i:i+1, start_actions:end_actions] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
+                                results = env.call_each('hallucinate_step',args_list=[step2_extended_env_action[i:i+1, start_actions:end_actions] for i in range(step2_extended_env_action.shape[0])])
                                 obs = [r[0] for r in results]  # temp_observations from each env
                                 processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                                 step2_sd_sample_obs[extra_step].append(obs)
@@ -944,7 +947,7 @@ class RobocasaRobomimicImageRunnerEval(BaseImageRunner):
                             # 'sorted_orders': [[str(idx) for idx in order] for order in sorted_orders]
                         }
                         json.dump(chunk_step_actions,open(f'{self.output_dir}/sampled_indices.json','w'),indent=4)
-                        actions=actions[np.arange(actions.shape[0]), best_action_indices, :self.num_actions_to_execute, :]
+                        actions=actions[np.arange(actions.shape[0]), best_action_indices, start_actions:end_actions, :]
                         action_dict={'action':torch.tensor(actions).to(device)}
                     else:
                         print(f'step: {env_step_index}')

@@ -7,20 +7,6 @@ export MUJOCO_GL=osmesa
 export HYDRA_FULL_ERROR=1
 
 Usage:
-python final_eval_judgeexec.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_loss=0.037.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:${1} \
-    --change_test_textures \
-    --list_dataset_path PnPSinkToCounter_mg_val_kbpckt_firsthalf \
-    --n_envs 42 \
-    --specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247 \
-    --n_test 1 \
-    --choose_sample \
-    --num_samples 1 \
-    --additional_steps 3 \
-    --start_rollout_from_state 140 \
-    --max_steps 200 \
-    --prefix_dir dec17_na_na_32
 
 """
 import sys
@@ -65,9 +51,9 @@ import numpy as np
 @click.option('-guided_towards', '--guided_towards', default=1)
 @click.option('-d', '--device', default='cuda:0')
 @click.option('-max_steps', '--max_steps', default=None, type=int)
-@click.option('-n_train', '--n_train', default=100)
-@click.option('-n_test', '--n_test', default=100)
-@click.option('-n_envs', '--n_envs', default=100)
+@click.option('-n_train', '--n_train', default=None, type=int)
+@click.option('-n_test', '--n_test', default=None, type=int)
+@click.option('-n_envs', '--n_envs', default=None, type=int)
 @click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default=None)
 @click.option('-add', '--add', default='')
@@ -90,9 +76,10 @@ import numpy as np
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-llm_path', '--llm_path', default='/app/data/checkpoints/llm_checkpoints/checkpoint-400', help='Path to the base LLM repository')
-@click.option('-num_actions_to_execute', '--num_actions_to_execute', default=8, help='num actions to execute from prediction horizon')
+@click.option('-llm_gpu', '--llm_gpu', default=None, help='GPU to use for LLM')
+@click.option('-num_actions_to_execute', '--num_actions_to_execute', default=None, help='num actions to execute from prediction horizon')
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, num_actions_to_execute):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, llm_gpu, num_actions_to_execute):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -128,11 +115,18 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             for i in data['data']:
                 max_steps.append(data['data'][i]['actions'].shape[0]+50)
             max_steps=np.array(max_steps)
-            print('max_steps',int(np.percentile(max_steps,90)))
-            data.close()    
             max_steps=int(np.percentile(max_steps,90))
+            print('max_steps',max_steps)
+            data.close()    
         current_time = datetime.datetime.now()
-
+        if n_train is None:
+            n_train = len(h5py.File(dataset_path, 'r')['data']) + 1
+        if n_test is None:
+            n_test = 1
+        n_envs = n_train + n_test
+        print('n_train',n_train, 'n_test',n_test,'n_envs',n_envs)
+        print('n_train',n_train, 'n_test',n_test,'n_envs',n_envs)
+        print('n_train',n_train, 'n_test',n_test,'n_envs',n_envs)
         if not choose_sample and classifier_dir:
             if adaptive_guidance!='None':
                 output_dir+=f'{prefix_dir}/{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}_{adaptive_guidance}'
@@ -157,7 +151,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
                 'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs', \
-                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file', 'final_eval_judgeexec.py']
+                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file','final_eval_judgeexec.py']
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -197,19 +191,21 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
             cfg['task']['env_runner']['llm_path']=llm_path
+            cfg['task']['env_runner']['llm_gpu']=llm_gpu
             cfg['task']['num_actions_to_execute']=num_actions_to_execute
 
             cfg['task']['dataset_path'] = dataset_path
             cfg['task']['env_runner']['dataset_path'] = dataset_path
             cfg['task']['dataset']['dataset_path'] = dataset_path
             cfg['task']['env_runner']['max_steps'] = max_steps
-            cfg['task']['env_runner']['n_train'] = int(n_train)
-            cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-            cfg['task']['env_runner']['n_test'] = int(n_test)
-            cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-            cfg['task']['env_runner']['n_envs'] = int(n_envs)
+            cfg['task']['env_runner']['n_train'] = n_train
+            cfg['task']['env_runner']['n_train_vis'] = n_train
+            cfg['task']['env_runner']['n_test'] = n_test
+            cfg['task']['env_runner']['n_test_vis'] = n_test
+            cfg['task']['env_runner']['n_envs'] = n_envs
             if test_start_seed:
                 cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
+            cfg['task']['env_runner']['clip_model_name'] = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 
 
         cls = hydra.utils.get_class(cfg._target_)

@@ -35,6 +35,9 @@ def find_first_reward_one_timestep(trajectory):
 
 def main():
     # Base directory containing all experiment runs
+    if len(sys.argv) < 2:
+        print("Usage: python3 compute_average_success_rates_old.py <base_dir> [max_runs]")
+        sys.exit(1)
     base_dir = Path(sys.argv[1])
 
     # Dictionary to store success rates for each trial
@@ -59,9 +62,12 @@ def main():
 
     # List to track run names in order
     run_names = []
-
+    num_runs_included = 0
     # Iterate through all subdirectories
     for subdir in sorted(base_dir.iterdir()):
+        if len(sys.argv)>2 and num_runs_included >= int(sys.argv[2]): #only compute for a certain number of runs
+            break
+
         if not subdir.is_dir():
             continue
 
@@ -82,6 +88,7 @@ def main():
 
             # Extract mean score for this run
             if "train/mean_score" in data:
+                num_runs_included += 1
                 mean_scores.append(float(data["train/mean_score"]))
 
             # Analyze timesteps for this run
@@ -117,6 +124,8 @@ def main():
             per_run_timesteps.append(run_timesteps)
             if run_timesteps:
                 per_run_avg_timesteps.append(np.mean(run_timesteps))
+            else:
+                per_run_avg_timesteps.append(None)
 
             successful_runs += 1
 
@@ -124,17 +133,6 @@ def main():
             print(f"Error reading {eval_log_path}: {e}")
             failed_runs.append(subdir.name)
             continue
-
-    print(f"\n{'='*81}")
-    print(f"SUMMARY")
-    print(f"{'='*81}")
-    print(f"Total runs found: {successful_runs}")
-    if failed_runs:
-        print(f"Failed runs: {len(failed_runs)}")
-        for failed in failed_runs[:5]:  # Show first 5 failed runs
-            print(f"  - {failed}")
-        if len(failed_runs) > 5:
-            print(f"  ... and {len(failed_runs) - 5} more")
 
     # Compute and display average mean score across all runs
     if mean_scores:
@@ -165,12 +163,13 @@ def main():
         print(f"  75th percentile: {int(np.percentile(sorted_timesteps, 75))}")
 
         # Show per-run average timesteps
-        if per_run_avg_timesteps:
+        valid_run_avgs = [x for x in per_run_avg_timesteps if x is not None]
+        if valid_run_avgs:
             print(f"\nPer-run average timesteps:")
-            print(f"  Average across runs: {np.mean(per_run_avg_timesteps):.2f}")
-            print(f"  Std deviation across runs: {np.std(per_run_avg_timesteps):.2f}")
-            print(f"  Min run average: {np.min(per_run_avg_timesteps):.2f}")
-            print(f"  Max run average: {np.max(per_run_avg_timesteps):.2f}")
+            print(f"  Average across runs: {np.mean(valid_run_avgs):.2f}")
+            print(f"  Std deviation across runs: {np.std(valid_run_avgs):.2f}")
+            print(f"  Min run average: {np.min(valid_run_avgs):.2f}")
+            print(f"  Max run average: {np.max(valid_run_avgs):.2f}")
 
     # Compute and display average success rate for each trial
     print(f"\n{'='*81}")
@@ -203,7 +202,7 @@ def main():
             if unsuccessful_runs_list:
                 unsuccessful_run_info = f"Runs: {', '.join(unsuccessful_runs_list)}"
 
-        print(f"{trial_id:<15} {avg_rate:<20.4f} {std_rate:<15.4f} {len(rates):<10} {unsuccessful_run_info}")
+        # print(f"{trial_id:<15} {avg_rate:<20.4f} {std_rate:<15.4f} {len(rates):<10} {unsuccessful_run_info}")
 
     # Overall statistics across all trials
     all_averages = list(trial_averages.values())
@@ -227,7 +226,7 @@ def main():
         print(f"{'='*81}")
         print(f"Average success rate across all trials: {np.mean(all_averages):.4f}")
         print(f"Max success rate (trial succeeds if >=1/{num_runs} total runs succeeds): {max_success_rate:.4f}")
-        print(f"  Trials with at least one success: {trials_with_at_least_one_success}/{len(sorted_trials)}")
+        # print(f"  Trials with at least one success: {trials_with_at_least_one_success}/{len(sorted_trials)}")
         print(f"Std deviation across trials: {np.std(all_averages):.4f}")
         print(f"Number of trials: {len(all_averages)}")
         print(f"Min trial success rate: {np.min(all_averages):.4f}")
@@ -260,14 +259,14 @@ def main():
             "percentile_50_median": int(np.percentile(all_timesteps, 50)) if all_timesteps else None,
             "percentile_75": int(np.percentile(all_timesteps, 75)) if all_timesteps else None,
             "per_run_avg_timesteps": {
-                run_names[i]: float(per_run_avg_timesteps[i]) if i < len(per_run_avg_timesteps) else None
+                run_names[i]: float(per_run_avg_timesteps[i]) if per_run_avg_timesteps[i] is not None else None
                 for i in range(len(run_names))
             } if per_run_avg_timesteps else None,
             "per_run_statistics": {
-                "avg_of_run_averages": float(np.mean(per_run_avg_timesteps)) if per_run_avg_timesteps else None,
-                "std_of_run_averages": float(np.std(per_run_avg_timesteps)) if per_run_avg_timesteps else None,
-                "min_run_average": float(np.min(per_run_avg_timesteps)) if per_run_avg_timesteps else None,
-                "max_run_average": float(np.max(per_run_avg_timesteps)) if per_run_avg_timesteps else None
+                "avg_of_run_averages": float(np.mean([x for x in per_run_avg_timesteps if x is not None])) if any(x is not None for x in per_run_avg_timesteps) else None,
+                "std_of_run_averages": float(np.std([x for x in per_run_avg_timesteps if x is not None])) if any(x is not None for x in per_run_avg_timesteps) else None,
+                "min_run_average": float(np.min([x for x in per_run_avg_timesteps if x is not None])) if any(x is not None for x in per_run_avg_timesteps) else None,
+                "max_run_average": float(np.max([x for x in per_run_avg_timesteps if x is not None])) if any(x is not None for x in per_run_avg_timesteps) else None
             }
         },
         "trial_averages": {

@@ -1,0 +1,12 @@
+python final_eval_clip_policy_hitl_web.py \
+    --checkpoint data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897.ckpt \
+    --llm_path '' \
+    --device cuda:0 \
+    --change_test_textures \
+    --list_dataset_path PnPStoveToCounter_mg_fixed_224 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir hitl_16_mg_place_PnPStoveToCounter

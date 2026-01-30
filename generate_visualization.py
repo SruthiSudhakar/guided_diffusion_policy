@@ -6,8 +6,10 @@ import pdb
 import random
 """
 
-python3 generate_visualization.py --mp PnPCoffeeServeMug_expert_fixed_224_ --root_dir data/outputs/dec4/2025.12.04/00.06.44_clip_justCoffeeServeMug/checkpoints/epoch_30_step_2231/dec4_na_na_16
-
+python3 generate_visualization.py --mp PnPCoffeeServeMug_expert_ \
+    --root_dir data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897/na_na_16_mg_place_PnPCounterToCab_mg_fixed_224 
+    
+python3 -m http.server 8000
 """
 
 def generate_visualization(args):
@@ -16,7 +18,7 @@ def generate_visualization(args):
     # Find all eval_log.json files
     search_pattern = os.path.join(args.root_dir, f"{args.mp}*", "eval_log.json")
     log_files = glob.glob(search_pattern)
-    log_files = random.sample(log_files, k=min(100, len(log_files)))
+    log_files = random.sample(log_files, k=min(args.num_runs, len(log_files)))
 
     print(f"Found {len(log_files)} log files.")
 
@@ -338,7 +340,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mp",
         type=str,
-        required=True,
+        default='',
+    )
+    parser.add_argument(
+        "--num_runs",
+        type=int,
+        default=100000,
     )
     args = parser.parse_args()
     generate_visualization(args)

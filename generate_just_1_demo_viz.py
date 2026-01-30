@@ -5,14 +5,21 @@ from pathlib import Path
 import pdb
 import random
 import pdb
+"""
+python3 generate_just_1_demo_viz.py --mp PnPStoveToCounter \
+    --root_dir data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897/na_na_16_mg_place_PnPCounterToCab_mg_fixed_224 \
+    --num_runs 39 \
+    --demo_id 5 17 23 24 8 33 45 32 0
 
-def generate_visualization(args):
-    output_file = f"{args.root_dir}/demo{args.demo_id}_visualization.html"
+
+"""
+def generate_visualization(args, demo_id):
+    output_file = f"{args.root_dir}/demo{demo_id}_visualization.html"
     
     # Find all eval_log.json files
-    search_pattern = os.path.join(args.root_dir, f"{args.match_pattern}", "eval_log.json")
+    search_pattern = os.path.join(args.root_dir, f"{args.mp}*", "eval_log.json")
     log_files = glob.glob(search_pattern)
-    log_files = random.sample(log_files, k=min(41, len(log_files)))
+    log_files = random.sample(log_files, k=min(args.num_runs, len(log_files)))
 
     print(f"Found {len(log_files)} log files.")
 
@@ -266,7 +273,7 @@ def generate_visualization(args):
 """
 
     for group_id in sorted_group_ids:
-        if group_id!=str(args.demo_id):
+        if group_id!=str(demo_id):
             continue
         group = demos_by_group[group_id]
         successes = group['success']
@@ -349,14 +356,21 @@ if __name__ == "__main__":
         required=True,
     )
     parser.add_argument(
-        "--match_pattern",
-        type=str,
-        default='PnPSinkToCounter_mg_val_kbpckt_firsthalf_*',
+        "--mp",
+        required=True,
     )
     parser.add_argument(
         "--demo_id",
         type=str,
-        default='2',
+        nargs="+",          # one or more integers
+        default=['2'],
+        help="demo ID"
+    )
+    parser.add_argument(
+        "--num_runs",
+        required=True,
+        type=int,
     )
     args = parser.parse_args()
-    generate_visualization(args)
+    for demo_id in args.demo_id:
+        generate_visualization(args, demo_id)

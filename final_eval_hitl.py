@@ -54,13 +54,9 @@ python final_eval_hitl.py --checkpoint data/checkpoints/dp_model/epoch=1100-val_
 PnPSinkToCounter_mg_val_kbpckt_firsthalf
 --specific_train_exs 2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241,2,39,42,110,146,214,241 \
 PnPSinkToCounter_Human_fixed_textures
---specific_train_exs 0,2,6,7,28,34,39,42,46,61,62,74,77,87,90,99,100,110,125,136,146,151,153,154,156,164,169,175,176,182,183,206,207,214,218,229,232,240,241,245,247
 
 """
-#   
-# /proj/vondrick3/sruthi/robots/openvla/outputs/2025.03.08/03.08.09.07.32_jgd1/openvla-7b+chunk_mixture1_jgd+b80+lr-0.0005+lora-r16+dropout-0.0--image_aug--100_chkpt \
 import sys
-# use line-buffering for both stdout and stderr
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
@@ -82,37 +78,15 @@ from data.dgx_data_registery import DATASETS
 from termcolor import colored
 import time
 import numpy as np
-# import tensorflow as tf
 from PIL import Image
-# from transformers import AutoConfig, AutoImageProcessor, AutoModelForVision2Seq, AutoProcessor
-# from prismatic.extern.hf.configuration_prismatic import OpenVLAConfig
-# from prismatic.extern.hf.modeling_prismatic import OpenVLAForActionPrediction
-# from prismatic.extern.hf.processing_prismatic import PrismaticImageProcessor, PrismaticProcessor
-# from experiments.robot.openvla_utils import get_processor
-# from experiments.robot.robot_utils import ( get_action, get_image_resize_size, get_model,)
-# from experiments.robot.openvla_utils import (get_vla,get_vla_action,)
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from types import SimpleNamespace
 import torch
 import torch.nn as nn
 import torch.optim as optim
-# from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
-class SimpleClassifier(nn.Module):
-    def __init__(self, input_dim=65):
-        super(SimpleClassifier, self).__init__()
-        self.model = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1)            
-        )
-
-    def forward(self, x):
-        return self.model(x)
 
 @click.command()
 @click.option('-checkpoint', '--checkpoint', required=True)
@@ -216,7 +190,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
                 'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs', \
-                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute]
+                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, "file", "final_eval_hitl.py"]
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -228,7 +202,6 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
 
             cfg['task']['env_runner']['_target_'] = 'diffusion_policy.env_runner.robocasa_robomimic_image_runner_eval_new_hitl.RobocasaRobomimicImageRunnerEval'
             cfg['task']['env_runner']['render_obs_key']='robot0_agentview_left_image'
-            # cfg['task']['env_runner']['render_obs_key'] = 'robot0_robotview' if 'mg' in dataset_path else 'robot0_agentview_left_image'
 
             # Copy shape_meta from task level to env_runner level if it exists at task level
             if 'shape_meta' in cfg['task'] and 'shape_meta' not in cfg['task']['env_runner']:

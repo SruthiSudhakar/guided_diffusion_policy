@@ -105,9 +105,10 @@ import numpy as np
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-llm_path', '--llm_path', default='/app/data/checkpoints/llm_checkpoints/checkpoint-400', help='Path to the base LLM repository')
+@click.option('-llm_gpu', '--llm_gpu', default=None, help='GPU to use for LLM')
 @click.option('-num_actions_to_execute', '--num_actions_to_execute', default=8, help='num actions to execute from prediction horizon')
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, num_actions_to_execute):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, llm_gpu, num_actions_to_execute):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -212,6 +213,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
             cfg['task']['env_runner']['llm_path']=llm_path
+            cfg['task']['env_runner']['llm_gpu']=llm_gpu
             cfg['task']['num_actions_to_execute']=num_actions_to_execute
 
             cfg['task']['dataset_path'] = dataset_path

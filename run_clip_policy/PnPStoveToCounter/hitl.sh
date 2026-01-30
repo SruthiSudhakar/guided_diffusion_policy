@@ -1,0 +1,15 @@
+python final_eval_clip_policy_hitl_web.py \
+    --checkpoint data/outputs/dec4/2025.12.03/22.38.27_train_diffusion_unet_clip/checkpoints/epoch_70_step_4188.ckpt \
+    --llm_path '' \
+    --device cuda:0 \
+    --change_test_textures \
+    --list_dataset_path PnPStoveToCounter_mg_fixed_224 \
+    --n_envs 49 \
+    --n_train 48 \
+    --n_test 1 \
+    --choose_sample \
+    --num_samples 5 \
+    --additional_steps 1 \
+    --start_rollout_from_state 140 \
+    --max_steps 200 \
+    --prefix_dir jan19_hitl

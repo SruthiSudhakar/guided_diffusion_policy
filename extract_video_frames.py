@@ -3,6 +3,8 @@
 Script to extract frames from all MP4 videos in subdirectories.
 For each video file, creates a folder with the same name and saves all frames inside.
 Parallelized to process multiple videos concurrently.
+Usage:
+python3 /workspace/guided_diffusion_policy/extract_video_frames.py --root_dir /workspace/guided_diffusion_policy/data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897/na_na_16_expert_fulltaskPnPCounterToMicrowave
 """
 
 import os
@@ -13,7 +15,7 @@ from multiprocessing import Pool, cpu_count
 import functools
 
 
-def extract_frames_from_video(video_path, output_folder, show_progress=True):
+def extract_frames_from_video(video_path, output_folder, show_progress=False):
     """
     Extract all frames from a video file and save them to the output folder.
 
@@ -104,9 +106,9 @@ def process_directory(root_dir, num_workers=None):
     if num_workers is None:
         num_workers = min(cpu_count(), len(mp4_files))
 
-    print(f"Found {len(mp4_files)} MP4 file(s)")
-    print(f"Processing with {num_workers} parallel worker(s)")
-    print("-" * 80)
+    # print(f"Found {len(mp4_files)} MP4 file(s)")
+    # print(f"Processing with {num_workers} parallel worker(s)")
+    # print("-" * 80)
 
     # Process videos in parallel
     with Pool(processes=num_workers) as pool:
@@ -117,11 +119,11 @@ def process_directory(root_dir, num_workers=None):
             unit="video"
         ))
 
-    print("-" * 80)
-    print("\nProcessing Summary:")
-    for result in results:
-        print(f"  ✓ {result}")
-    print("-" * 80)
+    # print("-" * 80)
+    # print("\nProcessing Summary:")
+    # for result in results:
+    #     print(f"  ✓ {result}")
+    # print("-" * 80)
 
 
 if __name__ == "__main__":

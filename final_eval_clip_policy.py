@@ -8,26 +8,6 @@ export HYDRA_FULL_ERROR=1
 
 Usage:
 
-python final_eval_clip_policy.py --checkpoint data/outputs/dec4/2025.12.03/22.38.34_train_diffusion_unet_clip/checkpoints/epoch=0020-train_loss=0.033.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:4 \
-    --change_test_textures \
-    --list_dataset_path PnPCoffeeServeMug_expert_rand_128 \
-    --n_envs 52 \
-    --n_train 51 \
-    --n_test 1 \
-    --prefix_dir test
-
-python final_eval_clip_policy.py --checkpoint data/outputs/dec4/2025.12.03/22.33.27_train_diffusion_unet_clip/checkpoints/epoch=0010-train_loss=0.041.ckpt \
-    --llm_path data/checkpoints/llm_checkpoints/3view_sidebyside/checkpoint-3600 \
-    --device cuda:1 \
-    --change_test_textures \
-    --list_dataset_path PnPStoveToCounter_expert_fixed_224 \
-    --n_envs 2 \
-    --n_train 1 \
-    --n_test 1 \
-    --prefix_dir test
-
 """
 import sys
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
@@ -71,9 +51,9 @@ import numpy as np
 @click.option('-guided_towards', '--guided_towards', default=1)
 @click.option('-d', '--device', default='cuda:0')
 @click.option('-max_steps', '--max_steps', default=None, type=int)
-@click.option('-n_train', '--n_train', default=100)
-@click.option('-n_test', '--n_test', default=100)
-@click.option('-n_envs', '--n_envs', default=100)
+@click.option('-n_train', '--n_train', default=None, type=int)
+@click.option('-n_test', '--n_test', default=None, type=int)
+@click.option('-n_envs', '--n_envs', default=None, type=int)
 @click.option('-test_start_seed', '--test_start_seed', required=False)
 @click.option('-object', '--object', default=None)
 @click.option('-add', '--add', default='')
@@ -86,7 +66,7 @@ import numpy as np
 @click.option('-debug', '--debug', is_flag=True)
 @click.option('-choose_sample', '--choose_sample', is_flag=True)
 @click.option('-num_samples', '--num_samples', default=1)
-@click.option('-start_rollout_from_state', '--start_rollout_from_state', default=0)
+@click.option('-start_rollout_from_state', '--start_rollout_from_state', default=0.0, type=float)
 @click.option('-show_classifier_scores', '--show_classifier_scores', is_flag=True)
 @click.option('-adaptive_guidance', '--adaptive_guidance', default='None')
 @click.option('-decode_first', '--decode_first', is_flag=False)
@@ -96,9 +76,10 @@ import numpy as np
 @click.option('--specific_train_exs', type=str, default='', help='Comma-separated list of items.')
 @click.option('-prompt_with_video', '--prompt_with_video', is_flag=True)
 @click.option('-llm_path', '--llm_path', default='/app/data/checkpoints/llm_checkpoints/checkpoint-400', help='Path to the base LLM repository')
+@click.option('-llm_gpu', '--llm_gpu', default=None, help='GPU to use for LLM')
 @click.option('-num_actions_to_execute', '--num_actions_to_execute', default=None, help='num actions to execute from prediction horizon')
 
-def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, num_actions_to_execute):
+def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, guidance_scale, guided_towards, device, max_steps, n_train, n_test, n_envs, test_start_seed, object, add, prefix_dir, save, change_test_textures, change_test_objects, change_test_object_instances, init_state_none, debug, choose_sample, num_samples, start_rollout_from_state, show_classifier_scores, adaptive_guidance, decode_first, start_sampling, end_sampling, additional_steps, specific_train_exs,prompt_with_video, llm_path, llm_gpu, num_actions_to_execute):
     # Extract the value for task.dataset_path
     specific_train_exs = [x.strip() for x in specific_train_exs.split(',')] if specific_train_exs else []
     yaml_file = '/'.join(checkpoint.split('/')[:-2])+'/.hydra/overrides.yaml'  # Replace with your file path
@@ -110,35 +91,37 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         key, value = item.split('=', 1)
         parsed_data[key.strip()] = value.strip()
     
-    task=''
-    if list_dataset_path is None:
-        list_dataset_path = [parsed_data.get('task.dataset_path')]
-        print("Value of task.dataset_path:", list_dataset_path)
-        for split in dataset_path.split('/'):
-            if 'PnP' in split:
-                task+=split
-    elif 'hdf5' in list_dataset_path:
-        list_dataset_path=[list_dataset_path]
-        for split in list_dataset_path[0].split('/'):
-            if 'PnP' in split:
-                task+=split
-    else:
-        task+=list_dataset_path
-        list_dataset_path = DATASETS[list_dataset_path]
-
-    for dataset_path in list_dataset_path:
+    def run_single_eval(dataset_path, task, device, start_rollout_from_state):
         output_dir = checkpoint[:-5]+'/'  # Replace with your file path
         if max_steps is None:
-            max_steps=[]
+            max_steps_val=[]
             data = h5py.File(dataset_path, 'r')
             for i in data['data']:
-                max_steps.append(data['data'][i]['actions'].shape[0]+50)
-            max_steps=np.array(max_steps)
-            print('max_steps',int(np.percentile(max_steps,90)))
-            data.close()    
-            max_steps=int(np.percentile(max_steps,90))
-        current_time = datetime.datetime.now()
+                max_steps_val.append(data['data'][i]['actions'].shape[0]+50)
+            max_steps_val=np.array(max_steps_val)
+            max_steps_val=int(np.percentile(max_steps_val,90))
+            print('max_steps',max_steps_val)
+            data.close()
+        else:
+            max_steps_val = max_steps
+        if start_rollout_from_state<1:
+            start_rollout_from_state=max_steps_val*start_rollout_from_state
 
+        current_time = datetime.datetime.now()
+        if n_train is None:
+            n_train_val = len(h5py.File(dataset_path, 'r')['data']) + 1
+        else:
+            n_train_val = n_train
+            
+        if n_test is None:
+            n_test_val = 1
+        else:
+            n_test_val = n_test
+
+        n_envs = n_train_val + n_test_val
+        print('n_train',n_train_val, 'n_test',n_test_val,'n_envs',n_envs)
+        print('n_train',n_train_val, 'n_test',n_test_val,'n_envs',n_envs)
+        print('n_train',n_train_val, 'n_test',n_test_val,'n_envs',n_envs)
         if not choose_sample and classifier_dir:
             if adaptive_guidance!='None':
                 output_dir+=f'{prefix_dir}/{add}_{task}_{current_time.month}{current_time.day}{current_time.hour}{current_time.minute}{current_time.second}_guided_{guided_towards}_grad_steps{grad_steps}_{guidance_scale}_{adaptive_guidance}'
@@ -156,14 +139,14 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         with open (output_dir+'/save_some_deets.txt', 'w') as f: 
             deets = ['checkpoint', checkpoint, 'output_dir', output_dir, 'dataset_path', \
                 dataset_path, 'classifier_dir', classifier_dir, 'grad_steps', grad_steps, 'guidance_scale', \
-                guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps, \
-                'object',object, 'n_train', n_train, 'n_test', n_test, "n_envs", n_envs, \
+                guidance_scale, 'guided_towards', guided_towards, 'max_steps', max_steps_val, \
+                'object',object, 'n_train', n_train_val, 'n_test', n_test_val, "n_envs", n_envs, \
                 'test_start_seed', test_start_seed, 'change_test_objects', change_test_objects, \
                 'change_test_textures', change_test_textures, 'change_test_object_instances', \
                 change_test_object_instances, 'debug', debug, 'choose_sample',choose_sample, 'num_samples',num_samples, 'test init_state_none', init_state_none, \
                 'adaptive_guidance', adaptive_guidance, 'decode_first', decode_first, 'start_rollout_from_state', start_rollout_from_state, \
                 'start sampling', start_sampling, 'end sampling', end_sampling, 'additional_steps', additional_steps, 'specific_train_exs', \
-                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file','final_eval.py']
+                specific_train_exs, 'prompt_with_video',prompt_with_video, 'llm_path', llm_path, 'num_actions_to_execute',num_actions_to_execute, 'file','final_eval_clip_policy.py']
             deets = [str(x) for x in deets]
             f.writelines("\n".join(deets))
 
@@ -192,7 +175,7 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['debug']=debug
             cfg['task']['env_runner']['choose_sample']=choose_sample
             cfg['task']['env_runner']['num_samples']=num_samples
-            cfg['task']['env_runner']['start_rollout_from_state']=start_rollout_from_state
+            cfg['task']['env_runner']['start_rollout_from_state']=int(start_rollout_from_state)
             cfg['task']['env_runner']['init_state_none']=init_state_none
             cfg['task']['env_runner']['show_classifier_scores']=show_classifier_scores
             cfg['task']['env_runner']['adaptive_guidance']=adaptive_guidance
@@ -203,17 +186,18 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             cfg['task']['env_runner']['specific_train_exs']=specific_train_exs
             cfg['task']['env_runner']['prompt_with_video']=prompt_with_video
             cfg['task']['env_runner']['llm_path']=llm_path
+            cfg['task']['env_runner']['llm_gpu']=llm_gpu
             cfg['task']['num_actions_to_execute']=num_actions_to_execute
 
             cfg['task']['dataset_path'] = dataset_path
             cfg['task']['env_runner']['dataset_path'] = dataset_path
             cfg['task']['dataset']['dataset_path'] = dataset_path
-            cfg['task']['env_runner']['max_steps'] = max_steps
-            cfg['task']['env_runner']['n_train'] = int(n_train)
-            cfg['task']['env_runner']['n_train_vis'] = int(n_train)
-            cfg['task']['env_runner']['n_test'] = int(n_test)
-            cfg['task']['env_runner']['n_test_vis'] = int(n_test)
-            cfg['task']['env_runner']['n_envs'] = int(n_envs)
+            cfg['task']['env_runner']['max_steps'] = max_steps_val
+            cfg['task']['env_runner']['n_train'] = n_train_val
+            cfg['task']['env_runner']['n_train_vis'] = n_train_val
+            cfg['task']['env_runner']['n_test'] = n_test_val
+            cfg['task']['env_runner']['n_test_vis'] = n_test_val
+            cfg['task']['env_runner']['n_envs'] = n_envs
             if test_start_seed:
                 cfg['task']['env_runner']['test_start_seed'] = int(test_start_seed)
             cfg['task']['env_runner']['clip_model_name'] = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
@@ -251,6 +235,36 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
         out_path = os.path.join(output_dir, 'jgddone.json')
         json.dump({'done':'JGD done'}, open(out_path, 'w'), indent=2, sort_keys=True)
         print('done. output_dir:', output_dir)
+
+    # Main logic to parse inputs and call run_single_eval
+    raw_inputs = []
+    if list_dataset_path is None:
+        raw_inputs = [None]
+    else:
+        # Split by space to handle multiple datasets passed as a single quoted string
+        raw_inputs = list_dataset_path.split()
+
+    for raw_input in raw_inputs:
+        current_task = ''
+        current_paths = []
+        
+        if raw_input is None:
+            current_paths = [parsed_data.get('task.dataset_path')]
+            print("Value of task.dataset_path:", current_paths)
+            for split in current_paths[0].split('/'):
+                if 'PnP' in split:
+                    current_task += split
+        elif 'hdf5' in raw_input:
+            current_paths = [raw_input]
+            for split in current_paths[0].split('/'):
+                if 'PnP' in split:
+                    current_task += split
+        else:
+            current_task = raw_input
+            current_paths = DATASETS[raw_input]
+
+        for dataset_path in current_paths:
+            run_single_eval(dataset_path, current_task, device, start_rollout_from_state)
 
 if __name__ == '__main__':
     main()

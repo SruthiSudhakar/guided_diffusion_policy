@@ -42,6 +42,7 @@ import time
 from typing_extensions import TypedDict, NotRequired, Annotated
 import PIL
 import logging; logging.disable(logging.CRITICAL)
+import gc
 
 import logging
 from contextlib import contextmanager
@@ -381,9 +382,15 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False,
             )
+
+            # Explicit cleanup to prevent OOM
+            del inputs, generated_ids, generated_ids_trimmed, batch_image_inputs, batch_texts
+            torch.cuda.empty_cache()
+            gc.collect()
         else:
             raise ValueError(f"Unknown model option: {model}")
         all_outputs.extend(batch_outputs)
+        del batch_conversations
 
     # --- Extract numeric relative ranks and optionally annotate overlays ---
     relative_ranks = []
@@ -505,8 +512,8 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
             specific_train_exs=[],
             prompt_with_video=True,
             additional_steps=0,
-            LLM_GPU_ID=7,
             llm_path="",
+            llm_gpu=None,
             PROMPTS={},
             wm_checkpoint_path="",
             wm_guidance=7.0,
@@ -869,22 +876,20 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
         self.additional_steps=additional_steps
         self.num_actions_to_execute=num_actions_to_execute
         self.llm_path = llm_path
+        self.llm_gpu = llm_gpu
         if self.choose_sample:
             # Find the GPU with the lowest memory utilization
-            LLM_GPU_ID, gpu_utilization = get_gpu_with_lowest_memory_util()
-
-            if LLM_GPU_ID is not None:
-                print(f"GPU with the lowest memory utilization: GPU-{LLM_GPU_ID} with {gpu_utilization * 100:.2f}% usage")
-            else:
-                raise Exception('cannot contain LLM ')
-                print("No GPUs found.")
+            gpu_utilization = 0
+            if self.llm_gpu is None:
+                self.llm_gpu, gpu_utilization = get_gpu_with_lowest_memory_util()
+            print(f"GPU with the lowest memory utilization: GPU-{self.llm_gpu} with {gpu_utilization * 100:.2f}% usage")
             
             # Initialize LLM once
             if self.llm_path == "random" or self.llm_path == "choose0index" or self.llm_path == "none":
                 self.llm = self.llm_path
                 self.processor = None
             else:
-                print(f"Initializing LLM on GPU {LLM_GPU_ID}...")
+                print(f"Initializing LLM on GPU {self.llm_gpu}...")
                 from transformers import BitsAndBytesConfig
                 quantization_config = BitsAndBytesConfig(
                     load_in_8bit=True,
@@ -893,16 +898,33 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 self.llm = AutoModelForVision2Seq.from_pretrained(
                     self.llm_path,
                     torch_dtype='bfloat16',
-                    device_map={"": f"cuda:{LLM_GPU_ID}"},
+                    device_map={"": f"cuda:{self.llm_gpu}"},
                     trust_remote_code=True,
                     # quantization_config=None,
                     quantization_config=quantization_config,
                 )
                 self.llm = self.llm.eval()
                 self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
-            task_description = "Pick and place an object from the sink to the plate on the counter"
+            TASK_DESC_TO_SYSTEM_PROMPT = {
+                "PnPCounterToCab": "Pick the object from the counter and place it in the cabinet",
+                "PnPCabToCounter": "Pick the object from the cabinet and place it on the counter",
+                "PnPCounterToMicrowave": "Pick the object from the plate on the counter and place it in the microwave",
+                "PnPMicrowaveToCounter": "Pick the object from the microwave and place it on the plate on the counter",
+                "PnPStoveToCounter": "Pick the object from the stove and place it on the plate on the counter",  
+                "PnPCounterToStove": "Pick the object from the plate on the counter and place it on the stove",  
+                "PnPCounterToSink": "Pick the object from the plate on the counter and place it in the sink",  
+                "PnPSinkToCounter": "Pick the object from the sink and place it on the plate on the counter",
+                "CoffeeServeMug": "Pick the mug from under the coffee machine dispenser and place it on the counter",
+                "CloseDrawer": "Close the drawer",
+            }
+            for task_key, td in TASK_DESC_TO_SYSTEM_PROMPT.items():
+                if task_key in dataset_path:
+                    task_desc = td
+                    break
+            assert task_desc is not None, f"Task description not found for {dataset_path}"
+            print('TASK DESCRIPTION', task_desc)
             SYSTEM_PROMPT = f"""You are an expert roboticist tasked to compare a side-by-side of 2 images from a robot demonstration and determine which side shows more progress toward completing the task.
-            The robot task is: {task_description}
+            The robot task is: {task_desc}
             You will be given a side-by-side of 2 images from the same demonstration, and you need to identify how much closer or behind in task completion is the right image compared to the left."""
 
             problem = f"""Look at these two side-by-side images of a robot performing the task. \
@@ -1046,8 +1068,8 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                         del obs_dict['robot0_gripper_qpos']
                     if self.choose_sample and self.start_sampling<env_step_index<self.end_sampling:
                         reshaped_obs_dict=dict_apply(obs_dict, lambda x: x.repeat_interleave(self.num_samples, dim=0)) #each value in obs_dict is batch_sizex2x3x128x128  
-                        action_dict = policy.predict_action(reshaped_obs_dict)[0] #action outputs are batch_sizex8x7
-                        actions = action_dict['action_pred'].view(-1, self.num_samples, 16, 7).detach().to('cpu').numpy()
+                        action_dict = policy.predict_action(reshaped_obs_dict) #action outputs are batch_sizex8x7
+                        actions = action_dict.view(-1, self.num_samples, action_dict.shape[1], action_dict.shape[2]).detach().to('cpu').numpy()
                         print('action var:', np.mean(np.var(actions,axis=1)))
 
                         add_on = np.tile([0., -0.,  0.,  0., -1.], (actions.shape[0], actions.shape[1], actions.shape[2], 1))
@@ -1055,17 +1077,18 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                         current_state = env.call('get_env_state')
                         sd_sample_obs = []
                         step2_sd_sample_obs = {}
-                        for extra_step in range(self.additional_steps):  step2_sd_sample_obs[extra_step]=[]
+                        for extra_step in range(self.additional_steps):  
+                            step2_sd_sample_obs[extra_step]=[]
                         current_obs = env.call('get_raw_observations')
                         # Flip images vertically (they come upside down from the renderer)
                         for idx in range(len(current_obs)):
                             for key in ['robot0_agentview_left_image', 'robot0_agentview_right_image', 'robot0_eye_in_hand_image']:
                                 current_obs[idx][key] = current_obs[idx][key][::-1, :, :]  # Flip along height axis (C, H, W) format
 
-                        pbar=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
+                        pbar2=tqdm.tqdm(range(self.num_samples), desc="Trying diff action samples")
                         aggregated_obs = []
-                        for sample_idx in pbar:
-                            pbar.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
+                        for sample_idx in pbar2:
+                            pbar2.set_description(f"step: {env_step_index} sampling {sample_idx}/{self.num_samples}")
                             # self.generate_next_step(current_obs, [extended_env_action[i:i+1, sample_idx] for i in range(extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/0')
                             results = env.call_each('hallucinate_step',args_list=[extended_env_action[i:i+1, sample_idx] for i in range(extended_env_action.shape[0])])#,kwargs_list=[{'current_state': curr_state} for curr_state in current_state])
                             obs = [r[0] for r in results]  # temp_observations from each env
@@ -1084,7 +1107,7 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                                         continue
                                     step2_obs_dict[key] = np.stack([np.stack([one_env_obs_step[key] for one_env_obs_step in one_env_obs[-2:]]) for one_env_obs in processed_obs])
                                 step2_obs_dict = dict_apply(step2_obs_dict, lambda x: torch.from_numpy(x).to(device=device))
-                                step2_actions = policy.predict_action(step2_obs_dict)[0]['action_pred'].detach().to('cpu').numpy()
+                                step2_actions = policy.predict_action(step2_obs_dict).detach().to('cpu').numpy()
                                 add_on = np.tile([0., -0.,  0.,  0., -1.], (step2_actions.shape[0], step2_actions.shape[1], 1))
                                 step2_extended_env_action = np.concatenate((step2_actions, add_on), axis=-1)
                                 # self.generate_next_step(obs,[step2_extended_env_action[i:i+1] for i in range(step2_extended_env_action.shape[0])], f'{self.output_dir}/step_{env_step_index}/sample_{sample_idx}/{extra_step+1}')
@@ -1093,7 +1116,7 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                                 processed_obs = [r[1] for r in results]  # temp_processed_obs from each env
                                 step2_sd_sample_obs[extra_step].append(obs)
                             env.call_each('reset_after_hallucination',args_list=[(curr_state,) for curr_state in current_state])
-
+                        pbar2.close()
                         print('saving videos')
                         os.makedirs(f'{self.output_dir}/videos',exist_ok=True)
                         videos = [[] for _ in range(env.num_envs)]
@@ -1109,8 +1132,8 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                                 list3_of_images = [img['robot0_eye_in_hand_image'] for img in one_env]
                                 for _,v in step2_sd_sample_obs.items():
                                     list3_of_images+=[img['robot0_eye_in_hand_image'] for img in v[sample_idx][env_idx]]
-                                images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')
-                                videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}_3view.mp4')                        
+                                images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.mp4')
+                                videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.mp4')                        
                         # flattened_videos_list = list(itertools.chain.from_iterable(videos))  
                         best_action_indices, raw_results = get_qwen_relative_rank_batchify(videos, self.llm, self.processor,n_envs,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
