@@ -357,7 +357,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--mp",
-        required=True,
+        type=str,
+        default='',
     )
     parser.add_argument(
         "--demo_id",
@@ -368,7 +369,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--num_runs",
-        required=True,
+        default=1000000,
         type=int,
     )
     args = parser.parse_args()

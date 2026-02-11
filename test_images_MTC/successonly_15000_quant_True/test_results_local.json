@@ -1,0 +1,34 @@
+{
+  "results": [
+    {
+      "filename": "overlay_test_20260204_205240.png",
+      "prediction": -32.0,
+      "raw_output": "-32",
+      "task_token": "[MICROWAVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_205257.png",
+      "prediction": -32.0,
+      "raw_output": "-32",
+      "task_token": "[MICROWAVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_205351.png",
+      "prediction": -32.0,
+      "raw_output": "-32",
+      "task_token": "[MICROWAVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_205605.png",
+      "prediction": 32.0,
+      "raw_output": "32",
+      "task_token": "[MICROWAVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_205616.png",
+      "prediction": 32.0,
+      "raw_output": "32",
+      "task_token": "[MICROWAVE_TO_COUNTER]"
+    }
+  ]
+}

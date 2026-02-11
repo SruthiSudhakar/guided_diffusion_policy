@@ -155,3 +155,5 @@ externals/
 externals2/
 post_steps.sh
 *.tar
+
+openpi/

@@ -47,6 +47,7 @@ def compute_stats_for_group(subdirs, max_runs=None):
     mean_across_trajs_scores = []
     mean_timesteps = []
     all_timesteps = []
+    per_demo_max = {}
     num_runs_included = 0
 
     for subdir in sorted(subdirs):
@@ -67,6 +68,11 @@ def compute_stats_for_group(subdirs, max_runs=None):
         for key, value in data.items():
             if key.startswith("train/sim_max_reward_"):
                 mean_across_trajs_scores.append(float(value))
+                demo_id = key[len("train/sim_max_reward_"):]
+                if demo_id not in per_demo_max:
+                    per_demo_max[demo_id] = float(value)
+                else:
+                    per_demo_max[demo_id] = max(per_demo_max[demo_id], float(value))
 
         mean_timesteps_run = []
         for key, value in data.items():
@@ -84,6 +90,7 @@ def compute_stats_for_group(subdirs, max_runs=None):
         'mean_across_trajs_scores': mean_across_trajs_scores,
         'mean_timesteps': mean_timesteps,
         'all_timesteps': all_timesteps,
+        'per_demo_max': per_demo_max,
     }
 
 def build_results_dict(stats, base_dir=None):

@@ -81,3 +81,4 @@ pip install bitsandbytes
 git config --global --add safe.directory /app
 pip install open_clip_torch
 pip install flask
+pip install "setuptools<70"

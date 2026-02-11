@@ -6,9 +6,8 @@ import pdb
 import random
 """
 
-python3 generate_visualization.py --mp PnPCoffeeServeMug_expert_ \
-    --root_dir data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897/na_na_16_mg_place_PnPCounterToCab_mg_fixed_224 
-    
+python3 generate_visualization.py \
+    --root_dir data/outputs/jan19/2026.01.19/20.04.49_clip_allPnP/checkpoints/epoch_120_step_40897/feb2_expertllm_mg_place_PnPMicrowaveToCounter_mg_fixed_224
 python3 -m http.server 8000
 """
 

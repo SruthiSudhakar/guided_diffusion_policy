@@ -1,0 +1,118 @@
+{
+  "results": [
+    {
+      "filename": "env13_img1_and_env13_img2_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_10_step_5_sample_0_last_frame_and_env_10_step_5_sample_2_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_10_step_5_sample_1_last_frame_and_env_10_step_5_sample_2_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_13_step_7_sample_0_last_frame_and_env_13_step_7_sample_1_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_47_step_1_sample_0_last_frame_and_env_47_step_1_sample_4_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_47_step_1_sample_1_last_frame_and_env_47_step_1_sample_3_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_47_step_2_sample_0_last_frame_and_env_47_step_2_sample_3_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_6_step_11_sample_0_last_frame_and_env_6_step_11_sample_1_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_6_step_7_sample_0_last_frame_and_env_6_step_7_sample_3_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_6_step_7_sample_0_last_frame_and_env_6_step_7_sample_4_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "env_6_step_9_sample_0_last_frame_and_env_6_step_9_sample_3_last_frame_overlay.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_164705.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_165354.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_170402.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_180627.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_182842.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_183019.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_200702.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    },
+    {
+      "filename": "overlay_test_20260204_200842.png",
+      "prediction": -50.0,
+      "raw_output": "-50",
+      "task_token": "[STOVE_TO_COUNTER]"
+    }
+  ]
+}

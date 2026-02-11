@@ -104,12 +104,17 @@ def main(checkpoint, list_dataset_path, output_dir, classifier_dir, grad_steps, 
             data.close()
         else:
             max_steps_val = max_steps
+        print('BEFORE: max_steps_val:',max_steps_val, ', start_rollout_from_state:',start_rollout_from_state)
         if start_rollout_from_state<1:
             start_rollout_from_state=max_steps_val*start_rollout_from_state
-
+            max_steps_val = max_steps_val - start_rollout_from_state
+        print('AFTER: max_steps_val:',max_steps_val, ', start_rollout_from_state:',start_rollout_from_state)
         current_time = datetime.datetime.now()
         if n_train is None:
-            n_train_val = len(h5py.File(dataset_path, 'r')['data']) + 1
+            if 'PnPSinkToCounter' in dataset_path:
+                n_train_val = 50
+            else:
+                n_train_val = len(h5py.File(dataset_path, 'r')['data']) + 1
         else:
             n_train_val = n_train
             

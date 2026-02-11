@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(docker build:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(find:*)",
+      "Bash(gh api:*)",
+      "Bash(git submodule:*)",
+      "Bash(git submodule update:*)",
+      "Bash(git config:*)",
+      "Bash(GIT_LFS_SKIP_SMUDGE=1 git submodule update:*)"
     ],
     "deny": [],
     "ask": []

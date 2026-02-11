@@ -102,6 +102,7 @@ def compute_stats_for_group(subdirs, max_runs=None):
             'mean': float(np.mean(scores)),
             'std': float(np.std(scores)),
             'n': len(scores),
+            'any_success': int(any(s >= 1.0 for s in scores)),
         }
 
     return {
@@ -126,9 +127,13 @@ def build_results_dict(stats, base_dir=None):
         demo_means = [s['mean'] for s in per_demo_stats.values()]
         avg_per_demo_mean = float(np.mean(demo_means))
         std_per_demo_mean = float(np.std(demo_means))
+        # Fraction of demos where at least one run was successful
+        demo_any_success = [s['any_success'] for s in per_demo_stats.values()]
+        avg_any_success_rate = float(np.mean(demo_any_success))
     else:
         avg_per_demo_mean = None
         std_per_demo_mean = None
+        avg_any_success_rate = None
 
     results = {
         "metadata": {
@@ -137,19 +142,21 @@ def build_results_dict(stats, base_dir=None):
             "total_unique_demos": len(per_demo_stats),
         },
         "overall_statistics": {
-            "avg_mean_score": float(np.mean(mean_scores)) if mean_scores else None,
+            "avg_mean_score": float(np.mean(mean_scores)) if mean_scores else None, # Average of the per-run train/mean_score values. Each run is weighted equally
             "std_mean_score": float(np.std(mean_scores)) if mean_scores else None,
             "min_mean_score": float(np.min(mean_scores)) if mean_scores else None,
             "max_mean_score": float(np.max(mean_scores)) if mean_scores else None,
 
-            "avg_mean_across_trajs_score": float(np.mean(mean_across_trajs_scores)) if mean_across_trajs_scores else None,
+            "avg_mean_across_trajs_score": float(np.mean(mean_across_trajs_scores)) if mean_across_trajs_scores else None, # Pools ALL individual demo scores from ALL runs into one flat list, then takes the mean. Each individual evaluation is weighted equally. So if demo 0_0 appears in 10 runs and demo 10_10 appears in 2 runs, 0_0 gets 5x more weight. 
             "std_mean_across_trajs_score": float(np.std(mean_across_trajs_scores)) if mean_across_trajs_scores else None,
             "min_mean_across_trajs_score": float(np.min(mean_across_trajs_scores)) if mean_across_trajs_scores else None,
             "max_mean_across_trajs_score": float(np.max(mean_across_trajs_scores)) if mean_across_trajs_scores else None,
 
             # Per-demo aggregated stats (mean of per-demo means)
-            "avg_per_demo_mean": avg_per_demo_mean,
+            "avg_per_demo_mean": avg_per_demo_mean, # For each unique demo ID (e.g. 0_0), compute its mean score across runs. Then average those per-demo means. Each demo is weighted equally regardless of how many runs it appeared in.
             "std_per_demo_mean": std_per_demo_mean,
+            # Fraction of demos with at least one successful run
+            "avg_any_success_rate": avg_any_success_rate, # Fraction of demos with at least one successful run
         },
         "per_demo_statistics": per_demo_stats,
     }

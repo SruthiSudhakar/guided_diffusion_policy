@@ -252,6 +252,7 @@ def _load_and_prepare_image(image_path: str) -> np.ndarray:
     img = Image.open(image_path).convert('RGB')
     return np.array(img, dtype=np.float32)
 
+#TODO: POTENTIALLY PROBLEMATIC. ideally use decord.
 def create_overlay_image(image1_path: str, image2_path: str) -> Image.Image:
     arr1 = _load_and_prepare_image(image1_path)
     arr2 = _load_and_prepare_image(image2_path)
@@ -303,7 +304,7 @@ def save_last_frame_method(video_path):
     cv2.imwrite(output_path, cropped)
     return output_path
 
-def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, PROMPTS):
+def get_qwen_relative_rank_batchify(all_video_paths, model, processor, PROMPTS):
     best_indices = []
     raw_results = []
 
@@ -349,7 +350,7 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
     all_outputs = []
     total_batches = len(range(0, len(conversations), batch_size))
     for batch_start in range(0, len(conversations), batch_size):
-        print('running cosmos batch', batch_start + 1, '/', total_batches)
+        print('running cosmos batch', batch_start // batch_size + 1, '/', total_batches)
         batch_end = min(batch_start + batch_size, len(conversations))
         batch_conversations = conversations[batch_start:batch_end]
 
@@ -374,6 +375,14 @@ def get_qwen_relative_rank_batchify(all_video_paths, model, processor, n_envs, P
                 padding=True,
                 return_tensors="pt",
             ).to(model.device)
+            # if batch_start == 0:  # Print debug info for the first batch only
+            #     print(f"[DEBUG] Batch {batch_start} Input IDs shape: {inputs.input_ids.shape}")
+            #     print(f"[DEBUG] Attention mask sums: {inputs.attention_mask.sum(dim=1)}")
+            #     print(f"[DEBUG] First prompt text (last 200 chars): {repr(batch_texts[0][-200:])}")
+            #     if hasattr(inputs, 'pixel_values') and inputs.pixel_values is not None:
+            #          print(f"[DEBUG] Pixel values shape: {inputs.pixel_values.shape}")
+            #          print(f"[DEBUG] Pixel values range: [{inputs.pixel_values.min().item():.3f}, {inputs.pixel_values.max().item():.3f}]")
+
             with torch.no_grad():
                 generated_ids = model.generate(**inputs, max_new_tokens=5, do_sample=False, return_dict_in_generate=False)
             generated_ids_trimmed = generated_ids[:, inputs.input_ids.shape[1]:]
@@ -683,7 +692,13 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 else:
                     train_idx = train_start_idx + (i % len(f['data']))
                 enable_render = True
-                init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
+                try:
+                    init_state = f[f'data/demo_{train_idx}/states'][start_rollout_from_state]
+                except:
+                    print('using middle state!!!!!!!!!!', train_idx, start_rollout_from_state, len(f[f'data/demo_{train_idx}/states']))
+                    print('using middle state!!!!!!!!!!', train_idx, start_rollout_from_state, len(f[f'data/demo_{train_idx}/states']))
+                    print('using middle state!!!!!!!!!!', train_idx, start_rollout_from_state, len(f[f'data/demo_{train_idx}/states']))
+                    init_state = f[f'data/demo_{train_idx}/states'][int(len(f[f'data/demo_{train_idx}/states'])/2)]
                 env_model = f[f'data/demo_{train_idx}'].attrs["model_file"]
                 ep_meta = f[f'data/demo_{train_idx}'].attrs.get("ep_meta",None)
                 # Handle username variations (sruthisudhakar vs sruthi.sudhakar)
@@ -890,11 +905,13 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 self.processor = None
             else:
                 print(f"Initializing LLM on GPU {self.llm_gpu}...")
+                #TODO: POTENTIALLY PROBLEMATIC quant
                 from transformers import BitsAndBytesConfig
                 quantization_config = BitsAndBytesConfig(
                     load_in_8bit=True,
                     llm_int8_threshold=6.0
                 )
+                #TODO: POTENTIALLY PROBLEMATIC model class name
                 self.llm = AutoModelForVision2Seq.from_pretrained(
                     self.llm_path,
                     torch_dtype='bfloat16',
@@ -905,6 +922,7 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 )
                 self.llm = self.llm.eval()
                 self.processor = transformers.AutoProcessor.from_pretrained(self.llm_path)
+                self.processor.tokenizer.padding_side = 'left'
             TASK_TOKENS = {
                 "PnPCounterToCab": "[COUNTER_TO_CAB]",
                 "PnPCabToCounter": "[CAB_TO_COUNTER]",
@@ -915,18 +933,26 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                 "PnPCounterToSink": "[COUNTER_TO_SINK]",
                 "PnPSinkToCounter": "[SINK_TO_COUNTER]",
                 "PnPCoffeeServeMug": "[COFFEE_SERVE_MUG]",
+                "CoffeeServeMug": "[COFFEE_SERVE_MUG]",
                 "PnPCloseDrawer": "[CLOSE_DRAWER]",
+                "CloseDrawer": "[CLOSE_DRAWER]",
             }
 
             for task_key, td in TASK_TOKENS.items():
                 if task_key in dataset_path:
                     task_desc = td
                     break
-            assert task_desc is not None, f"Task description not found for {dataset_path}"
+            try:
+                assert task_desc is not None, f"Task description not found for {dataset_path}"
+            except AssertionError as e:
+                print(e)
+                import pdb; pdb.set_trace()
+                raise e
             print('TASK DESCRIPTION', task_desc)
+            #TODO: POTENTIALLY PROBLEMATIC. FIXED
             SYSTEM_PROMPT = "Compare robot task progress. Respond with a number: positive if right image shows more progress, negative if less."
             problem = f"""Task: {task_desc}
-            Which image shows more task progress? Respond with a number from -100 to 100."""
+Which image shows more task progress? Respond with a number from -100 to 100."""
 
 
             extract_function = float
@@ -1126,7 +1152,7 @@ class RobocasaRobomimicImageRunnerEvalClip(BaseImageRunner):
                                 images_to_video_side_by_side(list1_of_images, list2_of_images, list3_of_images, output_path=f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.mp4')
                                 videos[env_idx].append(f'{self.output_dir}/videos/env_{env_idx}_step_{env_step_index}_sample_{sample_idx}.mp4')                        
                         # flattened_videos_list = list(itertools.chain.from_iterable(videos))  
-                        best_action_indices, raw_results = get_qwen_relative_rank_batchify(videos, self.llm, self.processor,n_envs,self.PROMPTS)
+                        best_action_indices, raw_results = get_qwen_relative_rank_batchify(videos, self.llm, self.processor,self.PROMPTS)
                         print('best actions idx:', best_action_indices)
                         # print('sorted orders (best to worst):', sorted_orders)
                         chunk_step_actions[chunk_idx][env_step_index]={

@@ -1,0 +1,17 @@
+{
+  "dataset_key": "PnPCounterToCab_mg_fixed_224",
+  "dataset_path": null,
+  "host": "172.17.0.4",
+  "port": 8000,
+  "prompt": null,
+  "num_demos": null,
+  "max_steps": null,
+  "replan_steps": 5,
+  "start_from_state": 0.0,
+  "num_wait_steps": 10,
+  "camera_size": 256,
+  "change_textures": false,
+  "change_objects": false,
+  "output_dir": "/app/data/pi0_eval_results",
+  "debug": true
+}

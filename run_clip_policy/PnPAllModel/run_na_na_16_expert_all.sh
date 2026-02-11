@@ -2,27 +2,24 @@
 set -e
 
 declare -A MAX_STEPS_MAP=(
-  # ["PnPCounterToSink_mg_fixed_224"]=0.41
-  # ["PnPCoffeeServeMug_mg_fixed_224"]=0.5
-  # ["PnPCounterToStove_mg_fixed_224"]=0.41
-  # ["PnPCabToCounter_mg_fixed_224"]=0.41
-  # ["PnPCounterToCab_mg_fixed_224"]=0.41
-  # ["PnPMicrowaveToCounter_mg_fixed_224"]=0.41
-  # ["PnPCounterToMicrowave_mg_fixed_224"]=0.41
-  ["PnPSinkToCounter_mg_val_kbpckt_firsthalf"]=0.41
+  ["PnPCounterToCab_expert_fixed_224"]=0.41
+  ["PnPCabToCounter_expert_fixed_224"]=0.41
+  # ["PnPMicrowaveToCounter_expert_fixed_224"]=0.41
+  ["PnPCounterToMicrowave_expert_fixed_224"]=0.41
+  ["PnPCounterToSink_expert_fixed_224"]=0.41
+  ["PnPSinkToCounter_expert_fixed_224"]=0.41
+  ["PnPCounterToStove_expert_fixed_224"]=0.41
+  ["PnPStoveToCounter_expert_fixed_224"]=0.41
+  ["PnPCoffeeServeMug_expert_fixed_224"]=0.5
 )
 
 dirs=("${!MAX_STEPS_MAP[@]}")
 
-for i in {1..30}; do
+for i in {1..50}; do
     for dir in "${dirs[@]}"; do
         max_steps="${MAX_STEPS_MAP[$dir]}"
 
-        if [ "$dir" == "PnPSinkToCounter_mg_val_kbpckt_firsthalf" ]; then
-            prefix_dir="na_na_16_mg_place_PnPSinkToCounter_mg_fixed_224"
-        else
-            prefix_dir="na_na_16_mg_place_$dir"
-        fi
+        prefix_dir="feb7_na_na_16_expert_place_$dir"
 
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] $dir | iter $i | max_steps=$max_steps"
 
