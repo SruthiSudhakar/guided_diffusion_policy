@@ -10,7 +10,19 @@
       "Bash(git submodule:*)",
       "Bash(git submodule update:*)",
       "Bash(git config:*)",
-      "Bash(GIT_LFS_SKIP_SMUDGE=1 git submodule update:*)"
+      "Bash(GIT_LFS_SKIP_SMUDGE=1 git submodule update:*)",
+      "Bash(grep:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(nvcc:*)",
+      "Bash(ls:*)",
+      "Bash(/app/openpi/.venv/bin/python:*)",
+      "Bash(/app/openpi/.venv/bin/python3.11:*)",
+      "Bash(python3.11:*)",
+      "Bash(apt list:*)",
+      "Bash(.venv/bin/python:*)",
+      "Bash(uv sync:*)",
+      "Bash(.venv/bin/pip install:*)",
+      "Bash(uv pip install:*)"
     ],
     "deny": [],
     "ask": []
